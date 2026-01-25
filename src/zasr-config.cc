@@ -84,10 +84,29 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
   parseFloat("--max-speech-duration", max_speech_duration);
 
   // ASR configuration
+  // Parse recognizer type first
+  {
+    const char* value = FindArgValue(args, "--recognizer-type");
+    if (value) {
+      if (strcmp(value, "sense-voice") == 0) {
+        recognizer_type = RecognizerType::kSenseVoice;
+      } else if (strcmp(value, "streaming-zipformer") == 0) {
+        recognizer_type = RecognizerType::kStreamingZipformer;
+      } else {
+        std::cerr << "Error: Invalid --recognizer-type '" << value
+                  << "'. Must be 'sense-voice' or 'streaming-zipformer'\n";
+        return false;
+      }
+    }
+  }
+
   parseString("--sense-voice-model", sense_voice_model);
   parseString("--tokens", tokens_path);
   parseBool("--use-itn", use_itn);
   parseInt("--num-threads", num_threads);
+  parseString("--zipformer-encoder", zipformer_encoder);
+  parseString("--zipformer-decoder", zipformer_decoder);
+  parseString("--zipformer-joiner", zipformer_joiner);
 
   // Processing configuration
   parseFloat("--vad-window-size-ms", vad_window_size_ms);
@@ -106,9 +125,31 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
 }
 
 bool ZAsrConfig::Validate() const {
-  if (sense_voice_model.empty()) {
-    std::cerr << "Error: --sense-voice-model is required\n";
-    return false;
+  // Validate based on recognizer type
+  if (recognizer_type == RecognizerType::kSenseVoice) {
+    // SenseVoice 需要 VAD 模型和 SenseVoice 模型
+    if (silero_vad_model.empty()) {
+      std::cerr << "Error: --silero-vad-model is required for recognizer-type 'sense-voice'\n";
+      return false;
+    }
+    if (sense_voice_model.empty()) {
+      std::cerr << "Error: --sense-voice-model is required for recognizer-type 'sense-voice'\n";
+      return false;
+    }
+  } else if (recognizer_type == RecognizerType::kStreamingZipformer) {
+    // Streaming Zipformer 不需要 VAD，只需要三个模型文件
+    if (zipformer_encoder.empty()) {
+      std::cerr << "Error: --zipformer-encoder is required for recognizer-type 'streaming-zipformer'\n";
+      return false;
+    }
+    if (zipformer_decoder.empty()) {
+      std::cerr << "Error: --zipformer-decoder is required for recognizer-type 'streaming-zipformer'\n";
+      return false;
+    }
+    if (zipformer_joiner.empty()) {
+      std::cerr << "Error: --zipformer-joiner is required for recognizer-type 'streaming-zipformer'\n";
+      return false;
+    }
   }
 
   if (tokens_path.empty()) {
@@ -207,7 +248,15 @@ std::string ZAsrConfig::ToString() const {
   os << "    Window size: " << vad_window_size_ms << "ms\n";
 
   os << "  ASR:\n";
-  os << "    Model: " << sense_voice_model << "\n";
+  if (recognizer_type == RecognizerType::kSenseVoice) {
+    os << "    Type: sense-voice (simulated streaming)\n";
+    os << "    Model: " << sense_voice_model << "\n";
+  } else {
+    os << "    Type: streaming-zipformer (true streaming)\n";
+    os << "    Encoder: " << zipformer_encoder << "\n";
+    os << "    Decoder: " << zipformer_decoder << "\n";
+    os << "    Joiner: " << zipformer_joiner << "\n";
+  }
   os << "    Tokens: " << tokens_path << "\n";
   os << "    Use ITN: " << (use_itn ? "true" : "false") << "\n";
   os << "    Threads: " << num_threads << "\n";

@@ -7,6 +7,12 @@
 
 namespace zasr {
 
+// 识别器类型枚举
+enum class RecognizerType {
+  kSenseVoice,       // SenseVoice (模拟流式，使用 OfflineRecognizer + VAD)
+  kStreamingZipformer  // Streaming Zipformer (真正流式，使用 OnlineRecognizer)
+};
+
 struct ZAsrConfig {
   // Server configuration
   std::string host = "0.0.0.0";
@@ -27,10 +33,18 @@ struct ZAsrConfig {
   float max_speech_duration = 8.0;   // seconds
   
   // ASR configuration
+  RecognizerType recognizer_type = RecognizerType::kSenseVoice;
+
+  // SenseVoice configuration (OfflineRecognizer)
   std::string sense_voice_model;
   std::string tokens_path;
   bool use_itn = true;
   int num_threads = 2;
+
+  // Streaming Zipformer configuration (OnlineRecognizer)
+  std::string zipformer_encoder;
+  std::string zipformer_decoder;
+  std::string zipformer_joiner;
   
   // Processing configuration
   float vad_window_size_ms = 30;  // VAD窗口大小（毫秒）

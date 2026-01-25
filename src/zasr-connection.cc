@@ -166,50 +166,93 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
     if (server_) {
       const auto& config = server_->GetConfig();
 
-      // 初始化VAD
-      sherpa_onnx::cxx::VadModelConfig vad_config;
-      vad_config.silero_vad.model = config.silero_vad_model;
+      // 初始化ASR - 根据配置选择离线或在线识别器
+      if (config.recognizer_type == RecognizerType::kSenseVoice) {
+        // SenseVoice 模式：需要初始化 VAD
+        sherpa_onnx::cxx::VadModelConfig vad_config;
+        vad_config.silero_vad.model = config.silero_vad_model;
 
-      // 使用客户端配置的VAD参数 TODO 根据客户端配置仔细调节这些参数
-      // 当环境嘈杂时可降低这个参数
-      vad_config.silero_vad.threshold = config.vad_threshold;
-      if (client_config_.max_sentence_silence > 50) {
-          vad_config.silero_vad.min_silence_duration = client_config_.max_sentence_silence / 1000.0f;
+        // 使用客户端配置的VAD参数 TODO 根据客户端配置仔细调节这些参数
+        // 当环境嘈杂时可降低这个参数
+        vad_config.silero_vad.threshold = config.vad_threshold;
+        if (client_config_.max_sentence_silence > 50) {
+            vad_config.silero_vad.min_silence_duration = client_config_.max_sentence_silence / 1000.0f;
+        }
+        else {
+            vad_config.silero_vad.min_silence_duration = config.min_silence_duration;
+        }
+        // 有效语音最短持续时间 250ms，当环境嘈杂时可提高这个参数
+        vad_config.silero_vad.min_speech_duration = config.min_speech_duration; // 0.25f
+        vad_config.silero_vad.max_speech_duration = config.max_speech_duration;
+        vad_config.sample_rate = config.sample_rate;
+
+        // 计算VAD窗口大小（样本数）
+        vad_window_size_ = static_cast<int32_t>(
+            config.sample_rate * config.vad_window_size_ms / 1000.0f);
+
+        // 创建VAD实例
+        vad_ = std::make_unique<sherpa_onnx::cxx::VoiceActivityDetector>(
+            sherpa_onnx::cxx::VoiceActivityDetector::Create(vad_config, 100.0f));  // 100秒缓冲区
+
+        if (!vad_) {
+          SendError(ErrorCode::ERR_ERROR_PROCESSING_START_TRANSCRIPTION, "Failed to create VAD instance");
+          return;
+        }
+
+        // 使用 OfflineRecognizer (SenseVoice)
+        sherpa_onnx::cxx::OfflineRecognizerConfig asr_config;
+        asr_config.model_config.model_type = "sense_voice";
+        asr_config.model_config.sense_voice.model = config.sense_voice_model;
+        asr_config.model_config.sense_voice.use_itn = client_config_.enable_inverse_text_normalization;
+        asr_config.model_config.debug = false;
+        asr_config.model_config.num_threads = config.num_threads;
+        asr_config.model_config.provider = "cpu";
+        asr_config.model_config.tokens = config.tokens_path;
+
+        offline_recognizer_ = std::make_unique<sherpa_onnx::cxx::OfflineRecognizer>(
+            sherpa_onnx::cxx::OfflineRecognizer::Create(asr_config));
+
+        if (!offline_recognizer_) {
+          SendError(ErrorCode::ERR_ERROR_PROCESSING_START_TRANSCRIPTION, "Failed to create OfflineRecognizer");
+          return;
+        }
+        use_online_recognizer_ = false;
+      } else {
+        // 使用 OnlineRecognizer (Streaming Zipformer)
+        // 注意：streaming-zipformer 不需要 VAD，使用内置的端点检测
+        sherpa_onnx::cxx::OnlineRecognizerConfig asr_config;
+        asr_config.feat_config.sample_rate = config.sample_rate;
+        asr_config.feat_config.feature_dim = 80;
+
+        asr_config.model_config.transducer.encoder = config.zipformer_encoder;
+        asr_config.model_config.transducer.decoder = config.zipformer_decoder;
+        asr_config.model_config.transducer.joiner = config.zipformer_joiner;
+        asr_config.model_config.tokens = config.tokens_path;
+        asr_config.model_config.num_threads = config.num_threads;
+        asr_config.model_config.provider = "cpu";
+        asr_config.model_config.debug = false;
+        asr_config.model_config.model_type = "transducer";
+
+        // 启用端点检测，实现自动断句
+        asr_config.enable_endpoint = true;
+        asr_config.rule1_min_trailing_silence = 1.2;  // 1.2秒静音后断句
+        asr_config.rule2_min_trailing_silence = 0.8;
+        asr_config.rule3_min_utterance_length = 10;   // 最短10ms的语音
+
+        online_recognizer_ = std::make_unique<sherpa_onnx::cxx::OnlineRecognizer>(
+            sherpa_onnx::cxx::OnlineRecognizer::Create(asr_config));
+
+        if (!online_recognizer_) {
+          SendError(ErrorCode::ERR_ERROR_PROCESSING_START_TRANSCRIPTION, "Failed to create OnlineRecognizer");
+          return;
+        }
+        use_online_recognizer_ = true;
       }
-      else {
-          vad_config.silero_vad.min_silence_duration = config.min_silence_duration;
-      }
-      // 有效语音最短持续时间 250ms，当环境嘈杂时可提高这个参数
-      vad_config.silero_vad.min_speech_duration = config.min_speech_duration; // 0.25f
-      vad_config.silero_vad.max_speech_duration = config.max_speech_duration;
-      vad_config.sample_rate = config.sample_rate;
 
-      // 计算VAD窗口大小（样本数）
-      vad_window_size_ = static_cast<int32_t>(
-          config.sample_rate * config.vad_window_size_ms / 1000.0f);
-
-      // 创建VAD实例
-      vad_ = std::make_unique<sherpa_onnx::cxx::VoiceActivityDetector>(
-          sherpa_onnx::cxx::VoiceActivityDetector::Create(vad_config, 100.0f));  // 100秒缓冲区
-
-      // 初始化ASR
-      sherpa_onnx::cxx::OfflineRecognizerConfig asr_config;
-      asr_config.model_config.model_type = "sense_voice";
-      asr_config.model_config.sense_voice.model = config.sense_voice_model;
-      asr_config.model_config.sense_voice.use_itn = client_config_.enable_inverse_text_normalization;
-      asr_config.model_config.debug = false;
-      asr_config.model_config.num_threads = config.num_threads;
-      asr_config.model_config.provider = "cpu";  // 使用CPU
-
-      // 设置tokens路径
-      asr_config.model_config.tokens = config.tokens_path;
-
-      // 创建ASR识别器
-      recognizer_ = std::make_unique<sherpa_onnx::cxx::OfflineRecognizer>(
-          sherpa_onnx::cxx::OfflineRecognizer::Create(asr_config));
-
-      LOG_INFO() << "VAD and ASR initialized for connection with config: "
-                << client_config_.ToString();
+      LOG_INFO() << "ASR initialized for connection with config: "
+                << client_config_.ToString()
+                << ", recognizer_type: "
+                << (use_online_recognizer_ ? "streaming-zipformer (no VAD)" : "sense-voice (with VAD)");
     } else {
       SendError(ErrorCode::ERR_SERVER_CONFIG_NOT_AVAILABLE, "Server configuration not available");
       return;
@@ -344,49 +387,63 @@ void ZAsrConnection::StopProcessing() {
     audio_buffer_.clear();
     float_buffer_.clear();
   }
-  
+
   vad_.reset();
-  recognizer_.reset();
-  current_stream_.reset();
+  offline_recognizer_.reset();
+  online_recognizer_.reset();
+  offline_stream_.reset();
+  online_stream_.reset();
 }
 
 void ZAsrConnection::ProcessAudioBuffer() {
   std::lock_guard<std::recursive_mutex> lock(buffer_mutex_);
-  
+
   // 检查连接是否仍然活跃
   if (!is_active_) {
     LOG_DEBUG() << "ProcessAudioBuffer: Connection not active, skipping";
     return;
   }
-  
 
-  // 调试日志
-  LOG_DEBUG() << "ProcessAudioBuffer called. audio_buffer_.size()="
-            << audio_buffer_.size() << ", vad_=" << (vad_ ? "not null" : "null")
-            << ", recognizer_=" << (recognizer_ ? "not null" : "null");
-
-  if (audio_buffer_.empty() || !vad_ || !recognizer_) {
-    LOG_DEBUG() << "ProcessAudioBuffer: Skipping - empty buffer or null vad/recognizer";
+  // 检查识别器是否已初始化
+  if ((use_online_recognizer_ && !online_recognizer_) ||
+      (!use_online_recognizer_ && !offline_recognizer_)) {
+    LOG_DEBUG() << "ProcessAudioBuffer: Skipping - recognizer not initialized";
     return;
   }
-  
+
+  if (audio_buffer_.empty()) {
+    LOG_DEBUG() << "ProcessAudioBuffer: Skipping - empty buffer";
+    return;
+  }
+
+  // 根据识别器类型采用不同的处理方式
+  if (use_online_recognizer_) {
+    ProcessOnlineMode();
+  } else {
+    ProcessOfflineMode();
+  }
+}
+
+// 离线模式处理（SenseVoice + VAD）
+void ZAsrConnection::ProcessOfflineMode() {
+  // 调试日志
+  LOG_DEBUG() << "ProcessOfflineMode: audio_buffer_.size()="
+            << audio_buffer_.size() << ", vad_=" << (vad_ ? "not null" : "null");
+
+  if (!vad_ || !offline_recognizer_) {
+    LOG_DEBUG() << "ProcessOfflineMode: Skipping - null vad or recognizer";
+    return;
+  }
+
   // 转换为float
   std::vector<float> float_samples = Int16ToFloat(audio_buffer_);
-  LOG_DEBUG() << "ProcessAudioBuffer: Converted to float, size=" << float_samples.size()
+  LOG_DEBUG() << "ProcessOfflineMode: Converted to float, size=" << float_samples.size()
             << ", vad_offset_=" << vad_offset_ << ", vad_window_size_=" << vad_window_size_;
-  
-  // 处理VAD窗口 - 修复条件：使用 <= 而不是 <
+
+  // 处理VAD窗口
   while (vad_offset_ + vad_window_size_ <= float_samples.size()) {
-    LOG_DEBUG() << "ProcessAudioBuffer: Processing VAD window at offset="
-              << vad_offset_;
-    
-    if (vad_offset_ + vad_window_size_ > float_samples.size()) {
-      LOG_ERROR() << "ProcessAudioBuffer: Invalid VAD window access! vad_offset_="
-                << vad_offset_ << ", window_size=" << vad_window_size_
-                << ", float_samples.size()=" << float_samples.size();
-      break;
-    }
-    
+    LOG_DEBUG() << "ProcessOfflineMode: Processing VAD window at offset=" << vad_offset_;
+
     vad_->AcceptWaveform(float_samples.data() + vad_offset_, vad_window_size_);
 
     if (!speech_started_ && vad_->IsDetected()) {
@@ -395,10 +452,10 @@ void ZAsrConnection::ProcessAudioBuffer() {
       speech_start_time_ = std::chrono::steady_clock::now();
 
       // 创建新的识别流
-      current_stream_ = std::make_unique<sherpa_onnx::cxx::OfflineStream>(
-          recognizer_->CreateStream());
-      LOG_DEBUG() << "ProcessAudioBuffer: Speech detected, created stream";
-      
+      offline_stream_ = std::make_unique<sherpa_onnx::cxx::OfflineStream>(
+          offline_recognizer_->CreateStream());
+      LOG_DEBUG() << "ProcessOfflineMode: Speech detected, created stream";
+
       // 开始新句子
       sentence_counter_++;
       current_sentence_.index = sentence_counter_;
@@ -406,92 +463,81 @@ void ZAsrConnection::ProcessAudioBuffer() {
       current_sentence_.current_time = total_ms_;
       current_sentence_.result = "";
       current_sentence_.active = true;
-      
+
       // 发送句子开始事件
       SendSentenceBegin(sentence_counter_, total_ms_);
-      LOG_DEBUG() << "ProcessAudioBuffer: Sent SentenceBegin for sentence "
-                << sentence_counter_;
+      LOG_DEBUG() << "ProcessOfflineMode: Sent SentenceBegin for sentence " << sentence_counter_;
     }
 
     vad_offset_ += vad_window_size_;
-    LOG_DEBUG() << "ProcessAudioBuffer: Updated vad_offset_ to " << vad_offset_;
   }
-  
-  // 如果没有检测到语音，清理缓冲区 - 修复计算错误
+
+  // 如果没有检测到语音，清理缓冲区
   if (!speech_started_) {
-    LOG_DEBUG() << "ProcessAudioBuffer: No speech detected, checking buffer cleanup";
+    LOG_DEBUG() << "ProcessOfflineMode: No speech detected, checking buffer cleanup";
     if (float_samples.size() > 10 * vad_window_size_) {
       size_t new_size = 10 * vad_window_size_;
       size_t samples_to_remove = float_samples.size() - new_size;
-      
-      // 修复：确保vad_offset_不会变成负数
-            // 同样调整streamed_offset_
-            if (streamed_offset_ > samples_to_remove) {
-              streamed_offset_ -= samples_to_remove;
-            } else {
-              streamed_offset_ = 0;
-            }
+
+      if (streamed_offset_ > samples_to_remove) {
+        streamed_offset_ -= samples_to_remove;
+      } else {
+        streamed_offset_ = 0;
+      }
       if (vad_offset_ > samples_to_remove) {
         vad_offset_ -= samples_to_remove;
       } else {
         vad_offset_ = 0;
       }
 
-      LOG_DEBUG() << "ProcessAudioBuffer: Trimming buffer, old_size="
-                << float_samples.size() << ", new_size=" << new_size
-                << ", vad_offset_ now=" << vad_offset_;
-      
+      LOG_DEBUG() << "ProcessOfflineMode: Trimming buffer, old_size="
+                << float_samples.size() << ", new_size=" << new_size;
+
       float_samples = std::vector<float>(
-          float_samples.end() - new_size, 
+          float_samples.end() - new_size,
           float_samples.end());
-          
-      // 修复：audio_buffer_和float_samples元素数量相同，不需要*2
+
       audio_buffer_ = std::vector<int16_t>(
-          audio_buffer_.end() - new_size, 
+          audio_buffer_.end() - new_size,
           audio_buffer_.end());
     }
   }
-  
+
   // 如果检测到语音，接受波形到识别器
-  if (speech_started_ && current_stream_) {
-    LOG_DEBUG() << "ProcessAudioBuffer: Speech started, feeding to recognizer, float_samples.size()="
-              << float_samples.size();
-    
+  if (speech_started_ && offline_stream_) {
+    LOG_DEBUG() << "ProcessOfflineMode: Feeding audio to recognizer";
+
     if (!float_samples.empty()) {
-            // 计算需要送入的新样本数量
-            size_t new_samples = 0;
-            if (streamed_offset_ <= float_samples.size()) {
-              new_samples = float_samples.size() - streamed_offset_;
-            } else {
-              // streamed_offset_ 超出范围，重置并送入所有样本
-              streamed_offset_ = 0;
-              new_samples = float_samples.size();
-            }
-            
-            if (new_samples > 0) {
-              LOG_DEBUG() << "ProcessAudioBuffer: Feeding " << new_samples << " new samples to recognizer, streamed_offset_=" << streamed_offset_;
-              current_stream_->AcceptWaveform(16000, float_samples.data() + streamed_offset_, new_samples);
-              streamed_offset_ += new_samples;
-            }
-      
+      // 计算需要送入的新样本数量
+      size_t new_samples = 0;
+      if (streamed_offset_ <= float_samples.size()) {
+        new_samples = float_samples.size() - streamed_offset_;
+      } else {
+        streamed_offset_ = 0;
+        new_samples = float_samples.size();
+      }
+
+      if (new_samples > 0) {
+        LOG_DEBUG() << "ProcessOfflineMode: Feeding " << new_samples << " samples";
+        offline_stream_->AcceptWaveform(16000, float_samples.data() + streamed_offset_, new_samples);
+        streamed_offset_ += new_samples;
+      }
+
       // 检查是否需要更新结果（每200ms）
       auto now = std::chrono::steady_clock::now();
       auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
           now - last_update_time_).count();
-      
-      if (elapsed_ms > 200) {  // 200ms更新间隔
-        LOG_DEBUG() << "ProcessAudioBuffer: Updating recognition result";
-        recognizer_->Decode(current_stream_.get());
-        auto result = recognizer_->GetResult(current_stream_.get());
 
-        // 更新当前句子结果
+      if (elapsed_ms > 200) {
+        LOG_DEBUG() << "ProcessOfflineMode: Updating recognition result";
+        offline_recognizer_->Decode(offline_stream_.get());
+        auto result = offline_recognizer_->GetResult(offline_stream_.get());
+
         current_sentence_.result = result.text;
         current_sentence_.current_time = total_ms_;
 
-        LOG_INFO() << "ProcessAudioBuffer: Recognition result: "
-                  << current_sentence_.result;
+        LOG_INFO() << "ProcessOfflineMode: Recognition result: " << current_sentence_.result;
 
-        // 发送识别结果变更事件
         SendTranscriptionResultChanged(current_sentence_.index,
                                       total_ms_,
                                       current_sentence_.result);
@@ -501,7 +547,7 @@ void ZAsrConnection::ProcessAudioBuffer() {
     }
   }
 
-  // 检查VAD是否检测到语音片段结束 - 添加安全检查
+  // 检查VAD是否检测到语音片段结束
   int pop_count = 0;
   while (vad_ && !vad_->IsEmpty()) {
     vad_->Pop();
@@ -509,42 +555,129 @@ void ZAsrConnection::ProcessAudioBuffer() {
   }
 
   if (pop_count > 0) {
-    LOG_DEBUG() << "ProcessAudioBuffer: VAD popped " << pop_count << " results";
+    LOG_DEBUG() << "ProcessOfflineMode: VAD popped " << pop_count << " results";
 
     // 语音片段结束，发送最终结果
-    if (current_stream_) {
-      LOG_DEBUG() << "ProcessAudioBuffer: Speech segment ended, getting final result";
-      recognizer_->Decode(current_stream_.get());
-      auto result = recognizer_->GetResult(current_stream_.get());
+    if (offline_stream_) {
+      LOG_DEBUG() << "ProcessOfflineMode: Speech segment ended, getting final result";
+      offline_recognizer_->Decode(offline_stream_.get());
+      auto result = offline_recognizer_->GetResult(offline_stream_.get());
 
       current_sentence_.result = result.text;
       current_sentence_.current_time = total_ms_;
 
-      LOG_DEBUG() << "ProcessAudioBuffer: Final result: "
-                << current_sentence_.result;
-      
-      // 发送句子结束事件
+      LOG_DEBUG() << "ProcessOfflineMode: Final result: " << current_sentence_.result;
+
       SendSentenceEnd(current_sentence_.index,
                      total_ms_,
                      current_sentence_.begin_time,
                      current_sentence_.result);
-      
+
       // 重置状态
       speech_started_ = false;
       streamed_offset_ = 0;
-      current_stream_.reset();
+      offline_stream_.reset();
       current_sentence_.active = false;
-      LOG_DEBUG() << "ProcessAudioBuffer: Reset speech state";
+      LOG_DEBUG() << "ProcessOfflineMode: Reset speech state";
     }
 
     // 清空缓冲区
     audio_buffer_.clear();
     float_buffer_.clear();
     vad_offset_ = 0;
-    LOG_DEBUG() << "ProcessAudioBuffer: Cleared buffers";
+    LOG_DEBUG() << "ProcessOfflineMode: Cleared buffers";
   }
 
-  LOG_DEBUG() << "ProcessAudioBuffer finished";
+  LOG_DEBUG() << "ProcessOfflineMode finished";
+}
+
+// 在线模式处理（Streaming Zipformer）
+void ZAsrConnection::ProcessOnlineMode() {
+  LOG_DEBUG() << "ProcessOnlineMode: audio_buffer_.size()=" << audio_buffer_.size();
+
+  if (!online_recognizer_) {
+    LOG_DEBUG() << "ProcessOnlineMode: Skipping - recognizer not initialized";
+    return;
+  }
+
+  // 如果还没有创建流，创建第一个流
+  if (!online_stream_) {
+    online_stream_ = std::make_unique<sherpa_onnx::cxx::OnlineStream>(
+        online_recognizer_->CreateStream());
+    sentence_counter_++;
+    current_sentence_.index = sentence_counter_;
+    current_sentence_.begin_time = total_ms_;
+    current_sentence_.current_time = total_ms_;
+    current_sentence_.result = "";
+    current_sentence_.active = true;
+
+    SendSentenceBegin(sentence_counter_, total_ms_);
+    LOG_DEBUG() << "ProcessOnlineMode: Created initial stream";
+  }
+
+  // 转换为float并送入识别器
+  std::vector<float> float_samples = Int16ToFloat(audio_buffer_);
+
+  if (!float_samples.empty()) {
+    LOG_DEBUG() << "ProcessOnlineMode: Feeding " << float_samples.size() << " samples";
+    online_stream_->AcceptWaveform(16000, float_samples.data(), float_samples.size());
+
+    // 只有在有足够数据时才解码
+    // 在线识别器需要积累一定数量的音频帧才能进行特征提取
+    if (online_recognizer_->IsReady(online_stream_.get())) {
+      // 解码并获取结果
+      online_recognizer_->Decode(online_stream_.get());
+      auto result = online_recognizer_->GetResult(online_stream_.get());
+
+      // 如果结果有变化，发送更新
+      if (result.text != current_sentence_.result) {
+        current_sentence_.result = result.text;
+        current_sentence_.current_time = total_ms_;
+
+        LOG_INFO() << "ProcessOnlineMode: Recognition result: " << current_sentence_.result;
+
+        SendTranscriptionResultChanged(current_sentence_.index,
+                                      total_ms_,
+                                      current_sentence_.result);
+      }
+    }
+
+    // 检查是否到达端点（即使没有足够数据也可以检查）
+    if (online_recognizer_->IsEndpoint(online_stream_.get())) {
+      LOG_DEBUG() << "ProcessOnlineMode: Endpoint detected";
+
+      // 获取最终结果
+      auto final_result = online_recognizer_->GetResult(online_stream_.get());
+      current_sentence_.result = final_result.text;
+      current_sentence_.current_time = total_ms_;
+
+      LOG_DEBUG() << "ProcessOnlineMode: Final result: " << current_sentence_.result;
+
+      SendSentenceEnd(current_sentence_.index,
+                     total_ms_,
+                     current_sentence_.begin_time,
+                     current_sentence_.result);
+
+      // 重置识别器流，开始新的句子
+      online_recognizer_->Reset(online_stream_.get());
+
+      sentence_counter_++;
+      current_sentence_.index = sentence_counter_;
+      current_sentence_.begin_time = total_ms_;
+      current_sentence_.current_time = total_ms_;
+      current_sentence_.result = "";
+      current_sentence_.active = true;
+
+      SendSentenceBegin(sentence_counter_, total_ms_);
+      LOG_DEBUG() << "ProcessOnlineMode: Started new sentence";
+    }
+  }
+
+  // 清空缓冲区（在线模式下不需要保留）
+  audio_buffer_.clear();
+  float_buffer_.clear();
+
+  LOG_DEBUG() << "ProcessOnlineMode finished";
 }
 std::vector<float> ZAsrConnection::Int16ToFloat(const std::vector<int16_t>& int16_samples) {
   std::vector<float> float_samples;
@@ -677,9 +810,11 @@ void ZAsrConnection::Close() {
 
   // 清理资源
   vad_.reset();
-  recognizer_.reset();
-  current_stream_.reset();
-  
+  offline_recognizer_.reset();
+  online_recognizer_.reset();
+  offline_stream_.reset();
+  online_stream_.reset();
+
   // 更新状态
   state_ = ConnectionState::CLOSED;
 

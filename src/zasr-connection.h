@@ -156,9 +156,15 @@ class ZAsrConnection : public std::enable_shared_from_this<ZAsrConnection> {
   
   // 处理音频数据
   void ProcessAudioData(const std::vector<int16_t>& samples);
-  
+
   // 执行VAD和ASR处理
   void ProcessAudioBuffer();
+
+  // 离线模式处理（SenseVoice + VAD）
+  void ProcessOfflineMode();
+
+  // 在线模式处理（Streaming Zipformer）
+  void ProcessOnlineMode();
   
   // 发送中间结果
   void SendIntermediateResult();
@@ -203,9 +209,12 @@ class ZAsrConnection : public std::enable_shared_from_this<ZAsrConnection> {
   std::chrono::steady_clock::time_point speech_start_time_;  // 语音开始时间
 
   // ASR相关
-  std::unique_ptr<sherpa_onnx::cxx::OfflineRecognizer> recognizer_;
-  std::unique_ptr<sherpa_onnx::cxx::OfflineStream> current_stream_;  // 当前语音片段的流
+  std::unique_ptr<sherpa_onnx::cxx::OfflineRecognizer> offline_recognizer_;
+  std::unique_ptr<sherpa_onnx::cxx::OnlineRecognizer> online_recognizer_;
+  std::unique_ptr<sherpa_onnx::cxx::OfflineStream> offline_stream_;  // 当前语音片段的离线流
+  std::unique_ptr<sherpa_onnx::cxx::OnlineStream> online_stream_;    // 当前语音片段的在线流
   int32_t streamed_offset_ = 0;      // 已经送入识别器流的样本偏移量（float样本）
+  bool use_online_recognizer_ = false;  // 是否使用在线识别器
   
   // 句子状态管理
   SentenceState current_sentence_;
