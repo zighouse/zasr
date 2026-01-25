@@ -1,0 +1,232 @@
+#include "zasr-config.h"
+#include <iostream>
+#include <sstream>
+#include <cstdlib>
+
+namespace zasr {
+
+const char* ZAsrConfig::FindArg(const std::vector<const char*>& args, const char* name) const {
+  for (size_t i = 0; i < args.size(); ++i) {
+    if (strcmp(args[i], name) == 0) {
+      return args[i];
+    }
+  }
+  return nullptr;
+}
+
+const char* ZAsrConfig::FindArgValue(const std::vector<const char*>& args, const char* name) const {
+  for (size_t i = 0; i < args.size(); ++i) {
+    if (strcmp(args[i], name) == 0) {
+      if (i + 1 < args.size()) {
+        return args[i + 1];
+      }
+      return nullptr;
+    }
+  }
+  return nullptr;
+}
+
+bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
+  // Build argument vector (skip program name)
+  std::vector<const char*> args;
+  for (int i = 1; i < argc; ++i) {
+    args.push_back(argv[i]);
+  }
+
+  // Check for help
+  if (FindArg(args, "--help") || FindArg(args, "-h")) {
+    return false;
+  }
+
+  // Helper macro to parse string arguments
+  auto parseString = [&](const char* argName, std::string& output) {
+    const char* value = FindArgValue(args, argName);
+    if (value) output = value;
+  };
+
+  // Helper macro to parse int arguments
+  auto parseInt = [&](const char* argName, int& output) {
+    const char* value = FindArgValue(args, argName);
+    if (value) output = std::atoi(value);
+  };
+
+  // Helper macro to parse float arguments
+  auto parseFloat = [&](const char* argName, float& output) {
+    const char* value = FindArgValue(args, argName);
+    if (value) output = std::atof(value);
+  };
+
+  // Helper macro to parse bool arguments
+  auto parseBool = [&](const char* argName, bool& output) {
+    const char* value = FindArgValue(args, argName);
+    if (value) {
+      output = (strcmp(value, "1") == 0 ||
+               strcmp(value, "true") == 0 ||
+               strcmp(value, "True") == 0);
+    }
+  };
+
+  // Server configuration
+  parseString("--host", host);
+  parseInt("--port", port);
+  parseInt("--max-connections", max_connections);
+  parseInt("--worker-threads", worker_threads);
+
+  // Audio configuration
+  parseInt("--sample-rate", sample_rate);
+  parseInt("--sample-width", sample_width);
+
+  // VAD configuration
+  parseString("--silero-vad-model", silero_vad_model);
+  parseFloat("--vad-threshold", vad_threshold);
+  parseFloat("--min-silence-duration", min_silence_duration);
+  parseFloat("--min-speech-duration", min_speech_duration);
+  parseFloat("--max-speech-duration", max_speech_duration);
+
+  // ASR configuration
+  parseString("--sense-voice-model", sense_voice_model);
+  parseString("--tokens", tokens_path);
+  parseBool("--use-itn", use_itn);
+  parseInt("--num-threads", num_threads);
+
+  // Processing configuration
+  parseFloat("--vad-window-size-ms", vad_window_size_ms);
+  parseFloat("--update-interval-ms", update_interval_ms);
+  parseInt("--max-batch-size", max_batch_size);
+
+  // Logging and storage
+  parseString("--log-file", log_file);
+  parseString("--data-dir", data_dir);
+
+  // Timeouts
+  parseInt("--connection-timeout", connection_timeout_seconds);
+  parseInt("--recognition-timeout", recognition_timeout_seconds);
+
+  return true;
+}
+
+bool ZAsrConfig::Validate() const {
+  if (sense_voice_model.empty()) {
+    std::cerr << "Error: --sense-voice-model is required\n";
+    return false;
+  }
+
+  if (tokens_path.empty()) {
+    std::cerr << "Error: --tokens is required\n";
+    return false;
+  }
+
+  if (sample_rate != 16000) {
+    std::cerr << "Error: sample rate must be 16000\n";
+    return false;
+  }
+
+  if (sample_width != 2) {
+    std::cerr << "Error: sample width must be 2 (s16le)\n";
+    return false;
+  }
+
+  if (max_connections <= 0) {
+    std::cerr << "Error: max-connections must be > 0\n";
+    return false;
+  }
+
+  if (worker_threads <= 0) {
+    std::cerr << "Error: worker-threads must be > 0\n";
+    return false;
+  }
+
+  if (num_threads <= 0) {
+    std::cerr << "Error: num-threads must be > 0\n";
+    return false;
+  }
+
+  if (vad_threshold <= 0 || vad_threshold > 1) {
+    std::cerr << "Error: vad-threshold must be in range (0, 1]\n";
+    return false;
+  }
+
+  if (min_silence_duration < 0) {
+    std::cerr << "Error: min-silence-duration must be >= 0\n";
+    return false;
+  }
+
+  if (min_speech_duration <= 0) {
+    std::cerr << "Error: min-speech-duration must be > 0\n";
+    return false;
+  }
+
+  if (max_speech_duration <= 0) {
+    std::cerr << "Error: max-speech-duration must be > 0\n";
+    return false;
+  }
+
+  if (vad_window_size_ms <= 0) {
+    std::cerr << "Error: vad-window-size-ms must be > 0\n";
+    return false;
+  }
+
+  if (update_interval_ms <= 0) {
+    std::cerr << "Error: update-interval-ms must be > 0\n";
+    return false;
+  }
+
+  if (max_batch_size <= 0) {
+    std::cerr << "Error: max-batch-size must be > 0\n";
+    return false;
+  }
+
+  if (connection_timeout_seconds <= 0) {
+    std::cerr << "Error: connection-timeout must be > 0\n";
+    return false;
+  }
+
+  if (recognition_timeout_seconds <= 0) {
+    std::cerr << "Error: recognition-timeout must be > 0\n";
+    return false;
+  }
+
+  return true;
+}
+
+std::string ZAsrConfig::ToString() const {
+  std::ostringstream os;
+
+  os << "ZASR Server Configuration:\n";
+  os << "  Server: " << host << ":" << port << "\n";
+  os << "  Max connections: " << max_connections << "\n";
+  os << "  Worker threads: " << worker_threads << "\n";
+  os << "  Audio: " << sample_rate << "Hz, " << sample_width << " bytes/sample\n";
+
+  os << "  VAD:\n";
+  os << "    Model: " << silero_vad_model << "\n";
+  os << "    Threshold: " << vad_threshold << "\n";
+  os << "    Min silence: " << min_silence_duration << "s\n";
+  os << "    Min speech: " << min_speech_duration << "s\n";
+  os << "    Max speech: " << max_speech_duration << "s\n";
+  os << "    Window size: " << vad_window_size_ms << "ms\n";
+
+  os << "  ASR:\n";
+  os << "    Model: " << sense_voice_model << "\n";
+  os << "    Tokens: " << tokens_path << "\n";
+  os << "    Use ITN: " << (use_itn ? "true" : "false") << "\n";
+  os << "    Threads: " << num_threads << "\n";
+  os << "    Max batch size: " << max_batch_size << "\n";
+  os << "    Update interval: " << update_interval_ms << "ms\n";
+
+  os << "  Timeouts:\n";
+  os << "    Connection: " << connection_timeout_seconds << "s\n";
+  os << "    Recognition: " << recognition_timeout_seconds << "s\n";
+
+  if (!log_file.empty()) {
+    os << "  Log file: " << log_file << "\n";
+  }
+
+  if (!data_dir.empty()) {
+    os << "  Data directory: " << data_dir << "\n";
+  }
+
+  return os.str();
+}
+
+}  // namespace zasr
