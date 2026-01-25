@@ -249,6 +249,24 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
         use_online_recognizer_ = true;
       }
 
+      // 初始化标点符号模型（如果启用）
+      if (config.enable_punctuation && !config.punctuation_model.empty()) {
+        sherpa_onnx::cxx::OfflinePunctuationConfig punct_config;
+        punct_config.model.ct_transformer = config.punctuation_model;
+        punct_config.model.num_threads = config.num_threads;
+        punct_config.model.provider = "cpu";
+        punct_config.model.debug = false;
+
+        punctuation_ = std::make_unique<sherpa_onnx::cxx::OfflinePunctuation>(
+            sherpa_onnx::cxx::OfflinePunctuation::Create(punct_config));
+
+        if (!punctuation_) {
+          LOG_WARN() << "Failed to create OfflinePunctuation, continuing without punctuation";
+        } else {
+          LOG_INFO() << "Punctuation model initialized: " << config.punctuation_model;
+        }
+      }
+
       LOG_INFO() << "ASR initialized for connection with config: "
                 << client_config_.ToString()
                 << ", recognizer_type: "
@@ -393,6 +411,7 @@ void ZAsrConnection::StopProcessing() {
   online_recognizer_.reset();
   offline_stream_.reset();
   online_stream_.reset();
+  punctuation_.reset();
 }
 
 void ZAsrConnection::ProcessAudioBuffer() {
@@ -696,6 +715,19 @@ int64_t ZAsrConnection::SamplesToMs(int64_t samples) const {
   return samples / 16;
 }
 
+std::string ZAsrConnection::AddPunctuation(const std::string& text) {
+  if (!punctuation_ || text.empty()) {
+    return text;
+  }
+
+  try {
+    return punctuation_->AddPunctuation(text);
+  } catch (const std::exception& e) {
+    LOG_ERROR() << "AddPunctuation failed: " << e.what() << ", returning original text";
+    return text;
+  }
+}
+
 void ZAsrConnection::SendIntermediateResult() {
   if (current_sentence_.active && !current_sentence_.result.empty()) {
     SendTranscriptionResultChanged(current_sentence_.index,
@@ -745,7 +777,8 @@ void ZAsrConnection::SendSentenceEnd(int index, int time_ms, int begin_time,
   payload["idx"] = index;
   payload["time"] = time_ms;
   payload["begin"] = begin_time;
-  payload["text"] = result;
+  // 对最终结果添加标点符号
+  payload["text"] = AddPunctuation(result);
 
   SendProtocolMessage("SentenceEnd", payload);
 }

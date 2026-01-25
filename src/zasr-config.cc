@@ -83,6 +83,10 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
   parseFloat("--min-speech-duration", min_speech_duration);
   parseFloat("--max-speech-duration", max_speech_duration);
 
+  // Punctuation configuration
+  parseBool("--enable-punctuation", enable_punctuation);
+  parseString("--punctuation-model", punctuation_model);
+
   // ASR configuration
   // Parse recognizer type first
   {
@@ -120,6 +124,14 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
   // Timeouts
   parseInt("--connection-timeout", connection_timeout_seconds);
   parseInt("--recognition-timeout", recognition_timeout_seconds);
+
+  // Set default paths if not specified
+  if (silero_vad_model.empty()) {
+    silero_vad_model = GetDefaultModelPath("silero_vad.int8.onnx");
+  }
+  if (enable_punctuation && punctuation_model.empty()) {
+    punctuation_model = GetDefaultModelPath("sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx");
+  }
 
   return true;
 }
@@ -262,6 +274,12 @@ std::string ZAsrConfig::ToString() const {
   os << "    Threads: " << num_threads << "\n";
   os << "    Max batch size: " << max_batch_size << "\n";
   os << "    Update interval: " << update_interval_ms << "ms\n";
+
+  os << "  Punctuation:\n";
+  os << "    Enabled: " << (enable_punctuation ? "true" : "false") << "\n";
+  if (enable_punctuation) {
+    os << "    Model: " << punctuation_model << "\n";
+  }
 
   os << "  Timeouts:\n";
   os << "    Connection: " << connection_timeout_seconds << "s\n";

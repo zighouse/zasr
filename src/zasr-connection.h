@@ -174,7 +174,10 @@ class ZAsrConnection : public std::enable_shared_from_this<ZAsrConnection> {
   
   // 转换样本数为毫秒
   int64_t SamplesToMs(int64_t samples) const;
-  
+
+  // 添加标点符号
+  std::string AddPunctuation(const std::string& text);
+
   // 更新最后活动时间
   void UpdateActivityTime();
   
@@ -215,6 +218,9 @@ class ZAsrConnection : public std::enable_shared_from_this<ZAsrConnection> {
   std::unique_ptr<sherpa_onnx::cxx::OnlineStream> online_stream_;    // 当前语音片段的在线流
   int32_t streamed_offset_ = 0;      // 已经送入识别器流的样本偏移量（float样本）
   bool use_online_recognizer_ = false;  // 是否使用在线识别器
+
+  // 标点符号相关
+  std::unique_ptr<sherpa_onnx::cxx::OfflinePunctuation> punctuation_;
   
   // 句子状态管理
   SentenceState current_sentence_;

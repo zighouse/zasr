@@ -13,25 +13,34 @@ enum class RecognizerType {
   kStreamingZipformer  // Streaming Zipformer (真正流式，使用 OnlineRecognizer)
 };
 
+// 辅助函数：获取默认模型路径
+inline std::string GetDefaultModelPath(const std::string& filename) {
+  const char* home = std::getenv("HOME");
+  if (home) {
+    return std::string(home) + "/.cache/sherpa-onnx/" + filename;
+  }
+  return "/models/sherpa-onnx/" + filename;
+}
+
 struct ZAsrConfig {
   // Server configuration
   std::string host = "0.0.0.0";
   int port = 2026;
   int max_connections = 256;
   int worker_threads = 4;
-  
+
   // Audio configuration
   int sample_rate = 16000;
   int sample_width = 2;  // s16le = 2 bytes
-  
+
   // VAD configuration
-  std::string silero_vad_model = "/models/k2-fsa/silero_vad.onnx";
+  std::string silero_vad_model;
   // 语音存在概率，Aurora-4 数据集上用 ts=0.5，ROC-AUC 达 0.98
   float vad_threshold = 0.5;
   float min_silence_duration = 0.1;  // seconds
   float min_speech_duration = 0.25;  // seconds
   float max_speech_duration = 8.0;   // seconds
-  
+
   // ASR configuration
   RecognizerType recognizer_type = RecognizerType::kSenseVoice;
 
@@ -45,6 +54,10 @@ struct ZAsrConfig {
   std::string zipformer_encoder;
   std::string zipformer_decoder;
   std::string zipformer_joiner;
+
+  // Punctuation configuration
+  bool enable_punctuation = false;
+  std::string punctuation_model;
   
   // Processing configuration
   float vad_window_size_ms = 30;  // VAD窗口大小（毫秒）
