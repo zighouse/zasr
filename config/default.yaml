@@ -6,7 +6,7 @@
 server:
   host: "0.0.0.0"
   port: 2026
-  max_connections: 256
+  max_connections: 8  # Optimized for local/embedded use
   worker_threads: 4
 
 # Audio configuration
@@ -36,11 +36,26 @@ asr:
   use_itn: true
 
   # SenseVoice models (used when type: "sense-voice")
+  # Available models (supports multiple languages):
+  #   - sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17-int8 (中英日韩粤语, 2024-07)
+  #   - sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09 (中英日韩粤语, 2025-09, recommended)
+  # Download from: https://github.com/k2-fsa/sherpa-onnx/releases
   sense_voice:
     model: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx"
     tokens: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
 
   # Streaming Zipformer models (used when type: "streaming-zipformer")
+  # Available models (language-specific):
+  #   - Chinese (推荐/Recommended):
+  #     * sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30
+  #     * sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30
+  #   - English:
+  #     * csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26
+  #   - Bilingual (中英):
+  #     * sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20
+  #     * sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16
+  #   - Other languages: Korean, French, etc.
+  # See: https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-transducer/zipformer-transducer-models.html
   streaming_zipformer:
     encoder: "${MODELS_DIR}/streaming-zipformer/encoder-epoch-99-avg-1.onnx"
     decoder: "${MODELS_DIR}/streaming-zipformer/decoder-epoch-99-avg-1.onnx"
@@ -56,7 +71,7 @@ punctuation:
 processing:
   vad_window_size_ms: 30  # VAD window size (milliseconds)
   update_interval_ms: 200  # Recognition update interval (milliseconds)
-  max_batch_size: 5  # Maximum batch size for recognition
+  max_batch_size: 2  # Maximum batch size for recognition (optimized for local use)
 
 # Timeout configuration
 timeouts:

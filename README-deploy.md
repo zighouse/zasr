@@ -113,7 +113,7 @@ vad:
 server:
   host: "0.0.0.0"          # Server bind address
   port: 2026                # WebSocket port
-  max_connections: 256      # Maximum concurrent connections
+  max_connections: 8        # Maximum concurrent connections
   worker_threads: 4         # Number of worker threads
 ```
 
@@ -156,7 +156,7 @@ asr:
 processing:
   vad_window_size_ms: 30    # VAD window size (milliseconds)
   update_interval_ms: 200   # Recognition update interval (milliseconds)
-  max_batch_size: 5         # Maximum batch size
+  max_batch_size: 2         # Maximum batch size
 ```
 
 ## Service Management
@@ -234,12 +234,55 @@ Models are searched in order:
 
 ### Model Types
 
-| Model | Description | Use Case |
-|-------|-------------|----------|
-| Silero VAD | Voice activity detection | SenseVoice required |
-| SenseVoice | Multilingual ASR | Chinese/English/Japanese/Korean |
-| Streaming Zipformer | Streaming ASR | English only |
-| Punctuation | Text punctuation | Post-processing |
+| Model | Description | Languages | Use Case |
+|-------|-------------|-----------|----------|
+| Silero VAD | Voice activity detection | - | Required for SenseVoice |
+| SenseVoice | Multilingual ASR (offline with VAD) | Chinese, English, Japanese, Korean, Cantonese | General purpose, multilingual |
+| Streaming Zipformer | True streaming ASR | Chinese, English, bilingual, and others | Low-latency, language-specific |
+| Punctuation | Text punctuation | Chinese, English | Post-processing |
+
+### SenseVoice Models
+
+SenseVoice supports multiple languages out of the box:
+
+| Model | Version | Languages | Recommended |
+|-------|---------|-----------|-------------|
+| sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17-int8 | 2024-07 | 中英日韩粤语 | Stable |
+| sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09 | 2025-09 | 中英日韩粤语 | ✅ Latest (推荐) |
+
+**Download**: https://github.com/k2-fsa/sherpa-onnx/releases
+
+### Streaming Zipformer Models
+
+Streaming Zipformer models are language-specific with better performance for single languages:
+
+#### Chinese Models (中文)
+- `sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30` - Large, high accuracy (推荐)
+- `sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30` - Standard, good performance
+- `sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16` - Small, bilingual
+
+#### English Models
+- `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26` - Standard English
+- `csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17` - 20M parameters
+
+#### Bilingual Models (中英)
+- `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` - Standard bilingual
+
+#### Other Languages
+- Korean: `sherpa-onnx-streaming-zipformer-korean-2024-06-16`
+- French: `shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14`
+
+**Documentation**: https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-transducer/zipformer-transducer-models.html
+
+### Model Selection Guide
+
+| Use Case | Recommended Model | Notes |
+|----------|-------------------|-------|
+| Multilingual support | SenseVoice 2025-09-09 | Best for mixed languages |
+| Chinese only | Streaming Zipformer zh-xlarge | Lower latency, high accuracy |
+| English only | Streaming Zipformer en-2023-06-26 | Native English performance |
+| Bilingual (中英) | Streaming Zipformer bilingual-zh-en | Good balance |
+| Low resource | SenseVoice int8 | Smallest model size |
 
 ## Integration with zai.vim
 

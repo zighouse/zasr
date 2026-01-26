@@ -10,8 +10,8 @@
 server:
   host: "127.0.0.1"  # Localhost only for zai.vim
   port: 2026
-  max_connections: 10  # Vim plugin needs few connections
-  worker_threads: 2  # Lower thread count for embedded use
+  max_connections: 8  # Optimized for local/embedded use
+  worker_threads: 4  # Optimal for local use
 
 audio:
   sample_rate: 16000
@@ -32,6 +32,10 @@ asr:
   num_threads: 2
   use_itn: true  # Inverse text normalization for numbers/dates
 
+  # SenseVoice models for zai.vim (multilingual)
+  # Recommended: sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09
+  # Supports: Chinese, English, Japanese, Korean, Cantonese
+  # Download: https://github.com/k2-fsa/sherpa-onnx/releases
   sense_voice:
     model: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx"
     tokens: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
@@ -45,7 +49,7 @@ punctuation:
 processing:
   vad_window_size_ms: 30
   update_interval_ms: 100  # Faster updates for responsive feedback
-  max_batch_size: 3
+  max_batch_size: 2  # Optimized for local use
 
 # Timeouts - shorter timeouts for editor use
 timeouts:

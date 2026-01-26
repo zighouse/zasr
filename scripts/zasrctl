@@ -265,7 +265,7 @@ generate_config() {
 server:
   host: "0.0.0.0"
   port: 2026
-  max_connections: 256
+  max_connections: 8
   worker_threads: 4
 
 audio:
@@ -302,7 +302,7 @@ punctuation:
 processing:
   vad_window_size_ms: 30
   update_interval_ms: 200
-  max_batch_size: 5
+  max_batch_size: 2
 
 timeouts:
   connection: 15

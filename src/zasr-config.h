@@ -26,7 +26,7 @@ struct ZAsrConfig {
   // Server configuration
   std::string host = "0.0.0.0";
   int port = 2026;
-  int max_connections = 256;
+  int max_connections = 8;
   int worker_threads = 4;
 
   // Audio configuration
@@ -62,7 +62,7 @@ struct ZAsrConfig {
   // Processing configuration
   float vad_window_size_ms = 30;  // VAD窗口大小（毫秒）
   float update_interval_ms = 200; // 更新间隔（毫秒）
-  int max_batch_size = 5;
+  int max_batch_size = 2;
   
   // Logging and storage
   std::string log_file;
