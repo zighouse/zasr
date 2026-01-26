@@ -59,16 +59,17 @@ std::string YamlConfig::GetString(const std::string& key, const std::string& def
       parts.push_back(part);
     }
 
-    const YAML::Node* current = root;
+    // Use a copy of the node to traverse
+    YAML::Node current = *root;
     for (const auto& p : parts) {
-      if (!current->IsMap() || !(*current)[p]) {
+      if (!current.IsMap() || !current[p]) {
         return default_value;
       }
-      current = &((*current)[p]);
+      current = current[p];
     }
 
-    if (current->IsScalar()) {
-      std::string value = current->as<std::string>();
+    if (current.IsScalar()) {
+      std::string value = current.as<std::string>();
       // Expand environment variables
       return ExpandEnvVars(value);
     }
@@ -95,16 +96,17 @@ int YamlConfig::GetInt(const std::string& key, int default_value) const {
       parts.push_back(part);
     }
 
-    const YAML::Node* current = root;
+    // Use a copy of the node to traverse
+    YAML::Node current = *root;
     for (const auto& p : parts) {
-      if (!current->IsMap() || !(*current)[p]) {
+      if (!current.IsMap() || !current[p]) {
         return default_value;
       }
-      current = &((*current)[p]);
+      current = current[p];
     }
 
-    if (current->IsScalar()) {
-      return current->as<int>();
+    if (current.IsScalar()) {
+      return current.as<int>();
     }
   } catch (const YAML::Exception& e) {
     // Return default value on any error
@@ -129,16 +131,17 @@ float YamlConfig::GetFloat(const std::string& key, float default_value) const {
       parts.push_back(part);
     }
 
-    const YAML::Node* current = root;
+    // Use a copy of the node to traverse
+    YAML::Node current = *root;
     for (const auto& p : parts) {
-      if (!current->IsMap() || !(*current)[p]) {
+      if (!current.IsMap() || !current[p]) {
         return default_value;
       }
-      current = &((*current)[p]);
+      current = current[p];
     }
 
-    if (current->IsScalar()) {
-      return current->as<float>();
+    if (current.IsScalar()) {
+      return current.as<float>();
     }
   } catch (const YAML::Exception& e) {
     // Return default value on any error
@@ -163,16 +166,17 @@ bool YamlConfig::GetBool(const std::string& key, bool default_value) const {
       parts.push_back(part);
     }
 
-    const YAML::Node* current = root;
+    // Use a copy of the node to traverse
+    YAML::Node current = *root;
     for (const auto& p : parts) {
-      if (!current->IsMap() || !(*current)[p]) {
+      if (!current.IsMap() || !current[p]) {
         return default_value;
       }
-      current = &((*current)[p]);
+      current = current[p];
     }
 
-    if (current->IsScalar()) {
-      return current->as<bool>();
+    if (current.IsScalar()) {
+      return current.as<bool>();
     }
   } catch (const YAML::Exception& e) {
     // Return default value on any error
@@ -199,16 +203,17 @@ std::vector<std::string> YamlConfig::GetStringList(const std::string& key) const
       parts.push_back(part);
     }
 
-    const YAML::Node* current = root;
+    // Use a copy of the node to traverse
+    YAML::Node current = *root;
     for (const auto& p : parts) {
-      if (!current->IsMap() || !(*current)[p]) {
+      if (!current.IsMap() || !current[p]) {
         return result;
       }
-      current = &((*current)[p]);
+      current = current[p];
     }
 
-    if (current->IsSequence()) {
-      for (const auto& item : *current) {
+    if (current.IsSequence()) {
+      for (const auto& item : current) {
         if (item.IsScalar()) {
           std::string value = item.as<std::string>();
           // Expand environment variables
@@ -239,12 +244,13 @@ bool YamlConfig::HasKey(const std::string& key) const {
       parts.push_back(part);
     }
 
-    const YAML::Node* current = root;
+    // Use a copy of the node to traverse
+    YAML::Node current = *root;
     for (const auto& p : parts) {
-      if (!current->IsMap() || !(*current)[p]) {
+      if (!current.IsMap() || !current[p]) {
         return false;
       }
-      current = &((*current)[p]);
+      current = current[p];
     }
 
     return true;

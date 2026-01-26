@@ -130,6 +130,7 @@ target_link_libraries(zasr-server
   ${SHERPA_ONNX_LIB_DIR}/libcargs.a
   ${ONNX_RUNTIME_LIB_DIR}/libonnxruntime.a
   "-Wl,--end-group"
+  yaml-cpp
   Threads::Threads
   ${CMAKE_DL_LIBS}
   stdc++
