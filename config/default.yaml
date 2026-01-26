@@ -1,0 +1,77 @@
+# ZAsR Server Default Configuration
+# Environment variables are expanded using ${VAR} or $VAR syntax
+# Common variables: ${HOME}, ${DEPLOY_DIR}, ${MODELS_DIR}
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 2026
+  max_connections: 256
+  worker_threads: 4
+
+# Audio configuration
+audio:
+  sample_rate: 16000
+  sample_width: 2  # s16le = 2 bytes
+
+# VAD configuration (Silero VAD)
+# Required for SenseVoice, optional for streaming-zipformer
+vad:
+  enabled: true
+  model: "${MODELS_DIR}/vad/silero_vad.int8.onnx"
+  # Speech probability threshold (0.0-1.0)
+  threshold: 0.5
+  # Minimum silence duration to treat as speech end (seconds)
+  min_silence_duration: 0.1
+  # Minimum speech duration to treat as speech start (seconds)
+  min_speech_duration: 0.25
+  # Maximum speech duration before forced cutoff (seconds)
+  max_speech_duration: 8.0
+
+# ASR configuration
+asr:
+  # Recognizer type: "sense-voice" or "streaming-zipformer"
+  type: "sense-voice"
+  num_threads: 2
+  use_itn: true
+
+  # SenseVoice models (used when type: "sense-voice")
+  sense_voice:
+    model: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx"
+    tokens: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
+
+  # Streaming Zipformer models (used when type: "streaming-zipformer")
+  streaming_zipformer:
+    encoder: "${MODELS_DIR}/streaming-zipformer/encoder-epoch-99-avg-1.onnx"
+    decoder: "${MODELS_DIR}/streaming-zipformer/decoder-epoch-99-avg-1.onnx"
+    joiner: "${MODELS_DIR}/streaming-zipformer/joiner-epoch-99-avg-1.onnx"
+    tokens: "${MODELS_DIR}/streaming-zipformer/tokens.txt"
+
+# Punctuation configuration
+punctuation:
+  enabled: false
+  model: "${MODELS_DIR}/punctuation/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx"
+
+# Processing configuration
+processing:
+  vad_window_size_ms: 30  # VAD window size (milliseconds)
+  update_interval_ms: 200  # Recognition update interval (milliseconds)
+  max_batch_size: 5  # Maximum batch size for recognition
+
+# Timeout configuration
+timeouts:
+  connection: 15  # Connection timeout (seconds)
+  recognition: 30  # Recognition timeout (seconds)
+
+# Logging configuration
+logging:
+  file: ""  # Log file path (empty = stdout)
+  level: "info"  # Log level: "debug", "info", "warning", "error"
+  data_dir: ""  # Optional: save audio/results directory (empty = disabled)
+
+# Model search paths (used if model paths are relative)
+# Models are searched in order: deploy_dir -> ~/.cache/sherpa-onnx -> /usr/local/share/sherpa-onnx
+model_paths:
+  - "${DEPLOY_DIR}/models"
+  - "${HOME}/.cache/sherpa-onnx"
+  - "/usr/local/share/sherpa-onnx"

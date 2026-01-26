@@ -67,12 +67,25 @@ else()
     endif()
 endif()
 
+# yaml-cpp for configuration file support
+if(EXISTS "${THIRD_PARTY_DIR}/yaml-cpp/yaml-cpp")
+    set(YAML_CPP_INCLUDE_DIR "${THIRD_PARTY_DIR}")
+    message(STATUS "Using local yaml-cpp: ${YAML_CPP_INCLUDE_DIR}")
+else()
+    find_path(YAML_CPP_INCLUDE_DIR yaml-cpp/yaml.h
+        PATHS /usr/include /usr/local/include)
+    if(YAML_CPP_INCLUDE_DIR)
+        message(STATUS "Using system yaml-cpp")
+    endif()
+endif()
+
 # Add executable
 add_executable(zasr-server
   src/zasr-server-main.cc
   src/zasr-server.cc
   src/zasr-connection.cc
   src/zasr-config.cc
+  src/yaml-config.cc
 )
 
 # Include directories
@@ -92,6 +105,10 @@ if(NLOHMANN_JSON_INCLUDE_DIR)
     target_include_directories(zasr-server PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
 elseif(NLOHMANN_JSON_INCLUDE_DIRS)
     target_include_directories(zasr-server PRIVATE ${NLOHMANN_JSON_INCLUDE_DIRS})
+endif()
+
+if(YAML_CPP_INCLUDE_DIR)
+    target_include_directories(zasr-server PRIVATE ${YAML_CPP_INCLUDE_DIR})
 endif()
 
 # Link libraries - use sherpa-onnx all required libraries with link group

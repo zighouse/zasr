@@ -75,6 +75,11 @@ struct ZAsrConfig {
   // Parse command line arguments
   // Returns true if parsing succeeded, false on error
   bool FromCommandLine(int argc, char* argv[]);
+
+  // Load configuration from YAML file
+  // Returns true if loading succeeded, false on error
+  bool FromYamlFile(const std::string& filepath);
+
   bool Validate() const;
   std::string ToString() const;
 

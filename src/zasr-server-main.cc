@@ -31,7 +31,10 @@ void RegisterSignalHandlers() {
 // 打印用法
 void PrintUsage(const char* program_name) {
   std::cout << "Usage: " << program_name << " [options]\n\n";
-  std::cout << "Options:\n";
+  std::cout << "Configuration:\n";
+  std::cout << "  --config <path>            Path to YAML configuration file\n";
+  std::cout << "\n";
+  std::cout << "Options (override config file):\n";
   std::cout << "  --host <address>           Server host address (default: 0.0.0.0)\n";
   std::cout << "  --port <port>              Server port (default: 2026)\n";
   std::cout << "  --max-connections <num>    Maximum concurrent connections (default: 256)\n";
@@ -64,7 +67,8 @@ void PrintUsage(const char* program_name) {
   std::cout << "\n";
   std::cout << "  --help                    Show this help message\n";
   std::cout << "\n";
-  std::cout << "Example:\n";
+  std::cout << "Examples:\n";
+  std::cout << "  " << program_name << " --config config/default.yaml\n";
   std::cout << "  " << program_name << " \\\n";
   std::cout << "    --silero-vad-model /models/k2-fsa/silero_vad.onnx \\\n";
   std::cout << "    --sense-voice-model /models/k2-fsa/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \\\n";
@@ -82,7 +86,33 @@ int main(int argc, char* argv[]) {
   // 解析命令行参数
   ZAsrConfig config;
 
-  // 读取参数
+  // Check if --config is specified
+  std::string config_file;
+  for (int i = 1; i < argc; ++i) {
+    if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+      config_file = argv[i + 1];
+      break;
+    }
+  }
+
+  // Also check ZASR_CONFIG environment variable
+  if (config_file.empty()) {
+    const char* env_config = std::getenv("ZASR_CONFIG");
+    if (env_config) {
+      config_file = env_config;
+    }
+  }
+
+  // Load from config file if specified
+  if (!config_file.empty()) {
+    std::cout << "Loading configuration from: " << config_file << std::endl;
+    if (!config.FromYamlFile(config_file)) {
+      std::cerr << "Failed to load configuration file." << std::endl;
+      return 1;
+    }
+  }
+
+  // 读取参数 (command-line args override config file)
   if (!config.FromCommandLine(argc, argv)) {
     PrintUsage(argv[0]);
     return 1;

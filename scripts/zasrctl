@@ -1,0 +1,354 @@
+#!/bin/bash
+#
+# zasrctl - ZAsR Server Control Script
+#
+# Usage: zasrctl {start|stop|restart|status|configure} [-c CONFIG] [-d DEPLOY_DIR] [-p PID_FILE] [-l LOG_FILE]
+#
+
+set -e
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default values
+DEPLOY_DIR="${DEPLOY_DIR:-$(dirname "$SCRIPT_DIR")}"
+CONFIG="${CONFIG:-$DEPLOY_DIR/config/default.yaml}"
+PID_FILE="${PID_FILE:-$DEPLOY_DIR/var/zasr.pid}"
+LOG_FILE="${LOG_FILE:-}"
+SERVER_BIN="$DEPLOY_DIR/bin/zasr-server"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Print usage
+usage() {
+    echo "Usage: $0 {start|stop|restart|status|configure} [OPTIONS]"
+    echo ""
+    echo "Actions:"
+    echo "  start       Start the ASR server"
+    echo "  stop        Stop the ASR server"
+    echo "  restart     Restart the ASR server"
+    echo "  status      Show server status"
+    echo "  configure   Generate/edit configuration"
+    echo ""
+    echo "Options:"
+    echo "  -c, --config FILE    Configuration file (default: \$DEPLOY_DIR/config/default.yaml)"
+    echo "  -d, --deploy-dir DIR Deployment directory (default: parent of scripts/)"
+    echo "  -p, --pid-file FILE  PID file location (default: \$DEPLOY_DIR/var/zasr.pid)"
+    echo "  -l, --log-file FILE  Log file location (default: stdout)"
+    echo ""
+    echo "Environment Variables:"
+    echo "  DEPLOY_DIR          Deployment directory"
+    echo "  CONFIG              Configuration file path"
+    echo "  MODELS_DIR          Model directory (default: \$DEPLOY_DIR/models)"
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -c|--config)
+                CONFIG="$2"
+                shift 2
+                ;;
+            -d|--deploy-dir)
+                DEPLOY_DIR="$2"
+                shift 2
+                ;;
+            -p|--pid-file)
+                PID_FILE="$2"
+                shift 2
+                ;;
+            -l|--log-file)
+                LOG_FILE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                # Unknown option
+                shift
+                ;;
+        esac
+    done
+
+    # Update paths based on deploy dir
+    if [ -z "$SERVER_BIN" ] || [ ! -f "$SERVER_BIN" ]; then
+        SERVER_BIN="$DEPLOY_DIR/bin/zasr-server"
+    fi
+}
+
+# Check if server is running
+is_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Start the server
+start_server() {
+    if is_running; then
+        echo -e "${YELLOW}Server is already running (PID: $(cat $PID_FILE))${NC}"
+        return 1
+    fi
+
+    # Check if binary exists
+    if [ ! -f "$SERVER_BIN" ]; then
+        echo -e "${RED}Error: Server binary not found: $SERVER_BIN${NC}"
+        echo "Please build the server first or check DEPLOY_DIR"
+        return 1
+    fi
+
+    # Check if config exists
+    if [ ! -f "$CONFIG" ]; then
+        echo -e "${YELLOW}Warning: Config file not found: $CONFIG${NC}"
+        echo "Using default command-line configuration..."
+    fi
+
+    # Create PID file directory
+    mkdir -p "$(dirname "$PID_FILE")"
+
+    # Set MODELS_DIR if not set
+    if [ -z "$MODELS_DIR" ]; then
+        export MODELS_DIR="$DEPLOY_DIR/models"
+    fi
+
+    # Build command
+    local cmd="$SERVER_BIN --config $CONFIG"
+
+    # Add log file if specified
+    if [ -n "$LOG_FILE" ]; then
+        cmd="$cmd --log-file $LOG_FILE"
+    fi
+
+    echo -e "${GREEN}Starting ZAsR server...${NC}"
+    echo "Config: $CONFIG"
+    echo "Deploy dir: $DEPLOY_DIR"
+    echo "Models dir: $MODELS_DIR"
+
+    # Start server in background
+    if [ -n "$LOG_FILE" ]; then
+        nohup $cmd > "$LOG_FILE" 2>&1 &
+    else
+        nohup $cmd >/dev/null 2>&1 &
+    fi
+
+    local pid=$!
+    echo $pid > "$PID_FILE"
+
+    # Wait a bit and check if it's still running
+    sleep 1
+    if is_running; then
+        echo -e "${GREEN}Server started successfully (PID: $pid)${NC}"
+        return 0
+    else
+        echo -e "${RED}Failed to start server${NC}"
+        rm -f "$PID_FILE"
+        return 1
+    fi
+}
+
+# Stop the server
+stop_server() {
+    if ! is_running; then
+        echo -e "${YELLOW}Server is not running${NC}"
+        rm -f "$PID_FILE"
+        return 0
+    fi
+
+    local pid=$(cat "$PID_FILE")
+    echo -e "${GREEN}Stopping server (PID: $pid)...${NC}"
+
+    # Send SIGTERM
+    kill "$pid" 2>/dev/null || true
+
+    # Wait for graceful shutdown
+    local count=0
+    while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
+        sleep 1
+        count=$((count + 1))
+    done
+
+    # Force kill if still running
+    if kill -0 "$pid" 2>/dev/null; then
+        echo -e "${YELLOW}Server did not stop gracefully, forcing...${NC}"
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+
+    rm -f "$PID_FILE"
+    echo -e "${GREEN}Server stopped${NC}"
+    return 0
+}
+
+# Restart the server
+restart_server() {
+    stop_server
+    sleep 1
+    start_server
+}
+
+# Show server status
+show_status() {
+    echo "ZAsR Server Status:"
+    echo "===================="
+    echo "Deploy dir: $DEPLOY_DIR"
+    echo "Config: $CONFIG"
+    echo "PID file: $PID_FILE"
+    echo ""
+
+    if is_running; then
+        local pid=$(cat "$PID_FILE")
+        echo -e "${GREEN}Status: Running${NC}"
+        echo "PID: $pid"
+
+        # Show memory usage
+        if command -v ps >/dev/null 2>&1; then
+            local mem=$(ps -p "$pid" -o rss= 2>/dev/null || echo "")
+            if [ -n "$mem" ]; then
+                echo "Memory: $((mem / 1024)) MB"
+            fi
+        fi
+
+        # Show uptime
+        if command -v ps >/dev/null 2>&1; then
+            local elapsed=$(ps -p "$pid" -o etime= 2>/dev/null || echo "")
+            if [ -n "$elapsed" ]; then
+                echo "Uptime: $elapsed"
+            fi
+        fi
+
+        # Check if port is listening
+        if command -v ss >/dev/null 2>&1; then
+            local port=$(grep -E "port:\s*[0-9]+" "$CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
+            port=${port:-2026}
+            if ss -tln | grep -q ":$port "; then
+                echo "Port: $port (listening)"
+            fi
+        fi
+
+        return 0
+    else
+        echo -e "${RED}Status: Not running${NC}"
+        return 1
+    fi
+}
+
+# Generate configuration
+generate_config() {
+    local output="${1:-$DEPLOY_DIR/config/custom.yaml}"
+
+    if [ -f "$output" ]; then
+        echo -e "${YELLOW}Config file already exists: $output${NC}"
+        read -p "Overwrite? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            return 1
+        fi
+    fi
+
+    mkdir -p "$(dirname "$output")"
+
+    cat > "$output" << 'EOF'
+# ZAsR Server Configuration
+# Generated by zasrctl
+
+server:
+  host: "0.0.0.0"
+  port: 2026
+  max_connections: 256
+  worker_threads: 4
+
+audio:
+  sample_rate: 16000
+  sample_width: 2
+
+vad:
+  enabled: true
+  model: "${MODELS_DIR}/vad/silero_vad.int8.onnx"
+  threshold: 0.5
+  min_silence_duration: 0.1
+  min_speech_duration: 0.25
+  max_speech_duration: 8.0
+
+asr:
+  type: "sense-voice"  # or "streaming-zipformer"
+  num_threads: 2
+  use_itn: true
+
+  sense_voice:
+    model: "${MODELS_DIR}/sense-voice/model.int8.onnx"
+    tokens: "${MODELS_DIR}/sense-voice/tokens.txt"
+
+  streaming_zipformer:
+    encoder: "${MODELS_DIR}/streaming-zipformer/encoder-epoch-99-avg-1.onnx"
+    decoder: "${MODELS_DIR}/streaming-zipformer/decoder-epoch-99-avg-1.onnx"
+    joiner: "${MODELS_DIR}/streaming-zipformer/joiner-epoch-99-avg-1.onnx"
+    tokens: "${MODELS_DIR}/streaming-zipformer/tokens.txt"
+
+punctuation:
+  enabled: false
+  model: "${MODELS_DIR}/punctuation/model.onnx"
+
+processing:
+  vad_window_size_ms: 30
+  update_interval_ms: 200
+  max_batch_size: 5
+
+timeouts:
+  connection: 15
+  recognition: 30
+
+logging:
+  file: ""
+  level: "info"
+  data_dir: ""
+EOF
+
+    echo -e "${GREEN}Configuration generated: $output${NC}"
+    echo "Edit this file to customize your server settings."
+}
+
+# Main
+parse_args "$@"
+
+ACTION=${1:-status}
+shift || true
+
+case $ACTION in
+    start)
+        parse_args "$@"
+        start_server
+        ;;
+    stop)
+        parse_args "$@"
+        stop_server
+        ;;
+    restart)
+        parse_args "$@"
+        restart_server
+        ;;
+    status)
+        parse_args "$@"
+        show_status
+        ;;
+    configure)
+        parse_args "$@"
+        generate_config "$1"
+        ;;
+    *)
+        echo -e "${RED}Unknown action: $ACTION${NC}"
+        echo ""
+        usage
+        exit 1
+        ;;
+esac

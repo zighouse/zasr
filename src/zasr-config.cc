@@ -1,4 +1,5 @@
 #include "zasr-config.h"
+#include "yaml-config.h"
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
@@ -127,6 +128,143 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
 
   // Set default paths if not specified
   if (silero_vad_model.empty()) {
+    silero_vad_model = GetDefaultModelPath("silero_vad.int8.onnx");
+  }
+  if (enable_punctuation && punctuation_model.empty()) {
+    punctuation_model = GetDefaultModelPath("sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx");
+  }
+
+  return true;
+}
+
+bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
+  YamlConfig config;
+  if (!config.LoadFromFile(filepath)) {
+    std::cerr << "Error loading YAML config: " << config.GetError() << "\n";
+    return false;
+  }
+
+  // Server configuration
+  host = config.GetString("server.host", host);
+  port = config.GetInt("server.port", port);
+  max_connections = config.GetInt("server.max_connections", max_connections);
+  worker_threads = config.GetInt("server.worker_threads", worker_threads);
+
+  // Audio configuration
+  sample_rate = config.GetInt("audio.sample_rate", sample_rate);
+  sample_width = config.GetInt("audio.sample_width", sample_width);
+
+  // VAD configuration
+  if (config.HasKey("vad.enabled")) {
+    bool vad_enabled = config.GetBool("vad.enabled", true);
+    if (!vad_enabled) {
+      // VAD is optional for streaming-zipformer
+      silero_vad_model.clear();
+    }
+  }
+  silero_vad_model = config.GetString("vad.model", silero_vad_model);
+  vad_threshold = config.GetFloat("vad.threshold", vad_threshold);
+  min_silence_duration = config.GetFloat("vad.min_silence_duration", min_silence_duration);
+  min_speech_duration = config.GetFloat("vad.min_speech_duration", min_speech_duration);
+  max_speech_duration = config.GetFloat("vad.max_speech_duration", max_speech_duration);
+
+  // ASR configuration
+  std::string asr_type = config.GetString("asr.type", "sense-voice");
+  if (asr_type == "streaming-zipformer") {
+    recognizer_type = RecognizerType::kStreamingZipformer;
+  } else {
+    recognizer_type = RecognizerType::kSenseVoice;
+  }
+
+  num_threads = config.GetInt("asr.num_threads", num_threads);
+  use_itn = config.GetBool("asr.use_itn", use_itn);
+
+  // SenseVoice models
+  sense_voice_model = config.GetString("asr.sense_voice.model", sense_voice_model);
+  tokens_path = config.GetString("asr.sense_voice.tokens", tokens_path);
+
+  // Streaming Zipformer models
+  zipformer_encoder = config.GetString("asr.streaming_zipformer.encoder", zipformer_encoder);
+  zipformer_decoder = config.GetString("asr.streaming_zipformer.decoder", zipformer_decoder);
+  zipformer_joiner = config.GetString("asr.streaming_zipformer.joiner", zipformer_joiner);
+  tokens_path = config.GetString("asr.streaming_zipformer.tokens", tokens_path);
+
+  // Punctuation
+  enable_punctuation = config.GetBool("punctuation.enabled", enable_punctuation);
+  punctuation_model = config.GetString("punctuation.model", punctuation_model);
+
+  // Processing
+  vad_window_size_ms = config.GetFloat("processing.vad_window_size_ms", vad_window_size_ms);
+  update_interval_ms = config.GetFloat("processing.update_interval_ms", update_interval_ms);
+  max_batch_size = config.GetInt("processing.max_batch_size", max_batch_size);
+
+  // Timeouts
+  connection_timeout_seconds = config.GetInt("timeouts.connection", connection_timeout_seconds);
+  recognition_timeout_seconds = config.GetInt("timeouts.recognition", recognition_timeout_seconds);
+
+  // Logging
+  log_file = config.GetString("logging.file", log_file);
+  data_dir = config.GetString("logging.data_dir", data_dir);
+
+  // Resolve model paths if not absolute
+  if (!silero_vad_model.empty() && silero_vad_model[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(silero_vad_model, model_paths);
+    if (!resolved.empty()) {
+      silero_vad_model = resolved;
+    }
+  }
+
+  if (!sense_voice_model.empty() && sense_voice_model[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(sense_voice_model, model_paths);
+    if (!resolved.empty()) {
+      sense_voice_model = resolved;
+    }
+  }
+
+  if (!tokens_path.empty() && tokens_path[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(tokens_path, model_paths);
+    if (!resolved.empty()) {
+      tokens_path = resolved;
+    }
+  }
+
+  if (!zipformer_encoder.empty() && zipformer_encoder[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(zipformer_encoder, model_paths);
+    if (!resolved.empty()) {
+      zipformer_encoder = resolved;
+    }
+  }
+
+  if (!zipformer_decoder.empty() && zipformer_decoder[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(zipformer_decoder, model_paths);
+    if (!resolved.empty()) {
+      zipformer_decoder = resolved;
+    }
+  }
+
+  if (!zipformer_joiner.empty() && zipformer_joiner[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(zipformer_joiner, model_paths);
+    if (!resolved.empty()) {
+      zipformer_joiner = resolved;
+    }
+  }
+
+  if (!punctuation_model.empty() && punctuation_model[0] != '/') {
+    auto model_paths = YamlConfig::GetDefaultModelPaths();
+    std::string resolved = YamlConfig::FindFileInPaths(punctuation_model, model_paths);
+    if (!resolved.empty()) {
+      punctuation_model = resolved;
+    }
+  }
+
+  // Set default paths if not specified
+  if (silero_vad_model.empty() && recognizer_type == RecognizerType::kSenseVoice) {
     silero_vad_model = GetDefaultModelPath("silero_vad.int8.onnx");
   }
   if (enable_punctuation && punctuation_model.empty()) {

@@ -38,6 +38,19 @@ else
     echo "json.hpp 已存在，跳过下载"
 fi
 
+# 下载 yaml-cpp (header-only version)
+if [ ! -d "yaml-cpp" ]; then
+    echo "下载 yaml-cpp..."
+    wget -q https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.8.0.tar.gz
+    tar -xzf yaml-cpp-0.8.0.tar.gz
+    mkdir -p yaml-cpp
+    cp -r yaml-cpp-yaml-cpp-0.8.0/include/yaml-cpp yaml-cpp/
+    rm -rf yaml-cpp-yaml-cpp-0.8.0 yaml-cpp-0.8.0.tar.gz
+    echo "yaml-cpp 下载完成"
+else
+    echo "yaml-cpp 目录已存在，跳过下载"
+fi
+
 # 下载 sherpa-onnx
 if [ ! -d "sherpa-onnx" ]; then
     echo "下载 sherpa-onnx..."
@@ -67,4 +80,5 @@ echo "目录结构："
 echo "  asio/         - asio 头文件 (用于 WebSocket 服务器)"
 echo "  websocketpp/  - websocketpp 头文件 (用于 WebSocket 服务器)"
 echo "  json.hpp      - nlohmann/json 单一头文件 (用于 JSON 序列化)"
+echo "  yaml-cpp/     - yaml-cpp 头文件 (用于 YAML 配置文件)"
 echo "  sherpa-onnx/  - sherpa-onnx 源码 (用于语音识别)"

@@ -1,0 +1,63 @@
+# ZAsR Server Configuration for zai.vim
+#
+# This configuration is optimized for use with zai.vim plugin.
+# It uses relative paths from the deploy directory.
+#
+# Environment variables:
+#   DEPLOY_DIR - ZAsR deployment directory
+#   MODELS_DIR - Model storage directory (default: $DEPLOY_DIR/models)
+
+server:
+  host: "127.0.0.1"  # Localhost only for zai.vim
+  port: 2026
+  max_connections: 10  # Vim plugin needs few connections
+  worker_threads: 2  # Lower thread count for embedded use
+
+audio:
+  sample_rate: 16000
+  sample_width: 2
+
+# VAD configuration - optimized for voice input in editor
+vad:
+  enabled: true
+  model: "${MODELS_DIR}/vad/silero_vad.int8.onnx"
+  threshold: 0.5
+  min_silence_duration: 0.5  # Longer silence for voice commands
+  min_speech_duration: 0.3
+  max_speech_duration: 10.0  # Allow longer commands
+
+# ASR configuration - SenseVoice for multilingual support
+asr:
+  type: "sense-voice"  # SenseVoice for better multilingual support
+  num_threads: 2
+  use_itn: true  # Inverse text normalization for numbers/dates
+
+  sense_voice:
+    model: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx"
+    tokens: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
+
+# Punctuation - can be enabled for text editing
+punctuation:
+  enabled: false  # Disabled for voice commands, enable for dictation
+  model: "${MODELS_DIR}/punctuation/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx"
+
+# Processing - tuned for responsive voice input
+processing:
+  vad_window_size_ms: 30
+  update_interval_ms: 100  # Faster updates for responsive feedback
+  max_batch_size: 3
+
+# Timeouts - shorter timeouts for editor use
+timeouts:
+  connection: 30
+  recognition: 15  # Quick timeout for voice commands
+
+# Logging - minimal logging for embedded use
+logging:
+  file: ""  # Empty = stdout (redirected by zai.vim)
+  level: "warning"  # Only log warnings and errors
+  data_dir: ""  # Disable audio recording by default
+
+# Note: For zai.vim integration, set these environment variables:
+#   export DEPLOY_DIR=~/.local/share/zai.vim/zasr
+#   export MODELS_DIR=$DEPLOY_DIR/models
