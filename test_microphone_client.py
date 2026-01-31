@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+ZASR - Streaming ASR Server
+Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+
+Licensed under the MIT License
+
 zasr-server 麦克风实时识别客户端
 从麦克风采集音频并发送到 zasr-server 进行实时语音识别
 """

@@ -1,3 +1,10 @@
+/*
+ * ZASR - Streaming ASR Server
+ * Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+ *
+ * Licensed under the MIT License
+ */
+
 #ifndef ZASR_YAML_CONFIG_H
 #define ZASR_YAML_CONFIG_H
 

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """
+ZASR - Streaming ASR Server
+Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+
+Licensed under the MIT License
+
 zasr-server 测试客户端
 用于测试 WebSocket 识别功能
 """

@@ -1,5 +1,10 @@
 #!/bin/bash
 #
+# ZASR - Streaming ASR Server
+# Copyright (C) 2025-2026 zighouse <zighouse@users.noreply.github.com>
+#
+# Licensed under the MIT License
+#
 # install.sh - ZASR Server Installation Script
 #
 # Usage: ./install.sh [OPTIONS]
