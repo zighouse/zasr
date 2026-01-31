@@ -3,6 +3,10 @@
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include <cstring>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cerrno>
 
 namespace zasr {
 
@@ -179,15 +183,18 @@ bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
   num_threads = config.GetInt("asr.num_threads", num_threads);
   use_itn = config.GetBool("asr.use_itn", use_itn);
 
-  // SenseVoice models
-  sense_voice_model = config.GetString("asr.sense_voice.model", sense_voice_model);
-  tokens_path = config.GetString("asr.sense_voice.tokens", tokens_path);
-
-  // Streaming Zipformer models
-  zipformer_encoder = config.GetString("asr.streaming_zipformer.encoder", zipformer_encoder);
-  zipformer_decoder = config.GetString("asr.streaming_zipformer.decoder", zipformer_decoder);
-  zipformer_joiner = config.GetString("asr.streaming_zipformer.joiner", zipformer_joiner);
-  tokens_path = config.GetString("asr.streaming_zipformer.tokens", tokens_path);
+  // ASR configuration based on recognizer type
+  if (recognizer_type == RecognizerType::kSenseVoice) {
+    // SenseVoice models
+    sense_voice_model = config.GetString("asr.sense_voice.model", sense_voice_model);
+    tokens_path = config.GetString("asr.sense_voice.tokens", tokens_path);
+  } else {
+    // Streaming Zipformer models
+    zipformer_encoder = config.GetString("asr.streaming_zipformer.encoder", zipformer_encoder);
+    zipformer_decoder = config.GetString("asr.streaming_zipformer.decoder", zipformer_decoder);
+    zipformer_joiner = config.GetString("asr.streaming_zipformer.joiner", zipformer_joiner);
+    tokens_path = config.GetString("asr.streaming_zipformer.tokens", tokens_path);
+  }
 
   // Punctuation
   enable_punctuation = config.GetBool("punctuation.enabled", enable_punctuation);
@@ -206,60 +213,226 @@ bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
   log_file = config.GetString("logging.file", log_file);
   data_dir = config.GetString("logging.data_dir", data_dir);
 
-  // Resolve model paths if not absolute
-  if (!silero_vad_model.empty() && silero_vad_model[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(silero_vad_model, model_paths);
-    if (!resolved.empty()) {
-      silero_vad_model = resolved;
+  // Resolve model paths - check if file exists first
+  if (!silero_vad_model.empty()) {
+    // If absolute path, check if file exists
+    if (silero_vad_model[0] == '/') {
+      struct stat buffer;
+      if (stat(silero_vad_model.c_str(), &buffer) != 0) {
+        std::cerr << "VAD model not found at: " << silero_vad_model << ", searching..." << std::endl;
+        // File doesn't exist, try to find it in search paths using just filename
+        size_t pos = silero_vad_model.find_last_of('/');
+        if (pos != std::string::npos) {
+          std::string filename = silero_vad_model.substr(pos + 1);
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          std::string resolved = YamlConfig::FindFileInPaths(filename, model_paths);
+          if (!resolved.empty()) {
+            silero_vad_model = resolved;
+            std::cerr << "VAD model found at: " << silero_vad_model << std::endl;
+          } else {
+            std::cerr << "VAD model NOT found!" << std::endl;
+          }
+        }
+      }
+    } else {
+      // Relative path, search in model paths
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(silero_vad_model, model_paths);
+      if (!resolved.empty()) {
+        silero_vad_model = resolved;
+      }
     }
   }
 
-  if (!sense_voice_model.empty() && sense_voice_model[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(sense_voice_model, model_paths);
-    if (!resolved.empty()) {
-      sense_voice_model = resolved;
+  // SenseVoice model path
+  if (!sense_voice_model.empty()) {
+    if (sense_voice_model[0] == '/') {
+      struct stat buffer;
+      if (stat(sense_voice_model.c_str(), &buffer) != 0) {
+        std::cerr << "SenseVoice model not found at: " << sense_voice_model << ", searching..." << std::endl;
+        // Extract the model directory name (e.g., "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17")
+        std::string resolved;
+        size_t last_slash = sense_voice_model.find_last_of('/');
+        size_t second_last = sense_voice_model.find_last_of('/', last_slash - 1);
+
+        if (second_last != std::string::npos && last_slash != std::string::npos) {
+          // Extract model directory name
+          std::string model_dir = sense_voice_model.substr(second_last + 1, last_slash - second_last - 1);
+          std::string filename = sense_voice_model.substr(last_slash + 1);
+
+          // Try to find this specific model directory
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          for (const auto& base_path : model_paths) {
+            std::string model_path = base_path + "/" + model_dir + "/" + filename;
+            if (stat(model_path.c_str(), &buffer) == 0) {
+              resolved = model_path;
+              break;
+            }
+          }
+
+          // If not found, try recursive search with model_dir hint
+          if (resolved.empty()) {
+            resolved = YamlConfig::FindFileInModelDir(model_paths, model_dir, filename);
+          }
+        }
+
+        if (!resolved.empty()) {
+          sense_voice_model = resolved;
+          std::cerr << "SenseVoice model found at: " << sense_voice_model << std::endl;
+        } else {
+          std::cerr << "SenseVoice model NOT found!" << std::endl;
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(sense_voice_model, model_paths);
+      if (!resolved.empty()) {
+        sense_voice_model = resolved;
+      }
     }
   }
 
-  if (!tokens_path.empty() && tokens_path[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(tokens_path, model_paths);
-    if (!resolved.empty()) {
-      tokens_path = resolved;
+  // Tokens path
+  if (!tokens_path.empty()) {
+    if (tokens_path[0] == '/') {
+      struct stat buffer;
+      if (stat(tokens_path.c_str(), &buffer) != 0) {
+        std::cerr << "Tokens file not found at: " << tokens_path << ", searching..." << std::endl;
+        // Extract the model directory name
+        std::string resolved;
+        size_t last_slash = tokens_path.find_last_of('/');
+        size_t second_last = tokens_path.find_last_of('/', last_slash - 1);
+
+        if (second_last != std::string::npos && last_slash != std::string::npos) {
+          // Extract model directory name
+          std::string model_dir = tokens_path.substr(second_last + 1, last_slash - second_last - 1);
+          std::string filename = tokens_path.substr(last_slash + 1);
+
+          // Try to find this specific model directory
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          for (const auto& base_path : model_paths) {
+            std::string model_path = base_path + "/" + model_dir + "/" + filename;
+            if (stat(model_path.c_str(), &buffer) == 0) {
+              resolved = model_path;
+              break;
+            }
+          }
+
+          // If not found, try recursive search with model_dir hint
+          if (resolved.empty()) {
+            resolved = YamlConfig::FindFileInModelDir(model_paths, model_dir, filename);
+          }
+        }
+
+        if (!resolved.empty()) {
+          tokens_path = resolved;
+          std::cerr << "Tokens file found at: " << tokens_path << std::endl;
+        } else {
+          std::cerr << "Tokens file NOT found!" << std::endl;
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(tokens_path, model_paths);
+      if (!resolved.empty()) {
+        tokens_path = resolved;
+      }
     }
   }
 
-  if (!zipformer_encoder.empty() && zipformer_encoder[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(zipformer_encoder, model_paths);
-    if (!resolved.empty()) {
-      zipformer_encoder = resolved;
+  // Zipformer encoder path
+  if (!zipformer_encoder.empty()) {
+    if (zipformer_encoder[0] == '/') {
+      struct stat buffer;
+      if (stat(zipformer_encoder.c_str(), &buffer) != 0) {
+        size_t pos = zipformer_encoder.find_last_of('/');
+        if (pos != std::string::npos) {
+          std::string filename = zipformer_encoder.substr(pos + 1);
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          std::string resolved = YamlConfig::FindFileInPaths(filename, model_paths);
+          if (!resolved.empty()) {
+            zipformer_encoder = resolved;
+          }
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(zipformer_encoder, model_paths);
+      if (!resolved.empty()) {
+        zipformer_encoder = resolved;
+      }
     }
   }
 
-  if (!zipformer_decoder.empty() && zipformer_decoder[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(zipformer_decoder, model_paths);
-    if (!resolved.empty()) {
-      zipformer_decoder = resolved;
+  // Zipformer decoder path
+  if (!zipformer_decoder.empty()) {
+    if (zipformer_decoder[0] == '/') {
+      struct stat buffer;
+      if (stat(zipformer_decoder.c_str(), &buffer) != 0) {
+        size_t pos = zipformer_decoder.find_last_of('/');
+        if (pos != std::string::npos) {
+          std::string filename = zipformer_decoder.substr(pos + 1);
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          std::string resolved = YamlConfig::FindFileInPaths(filename, model_paths);
+          if (!resolved.empty()) {
+            zipformer_decoder = resolved;
+          }
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(zipformer_decoder, model_paths);
+      if (!resolved.empty()) {
+        zipformer_decoder = resolved;
+      }
     }
   }
 
-  if (!zipformer_joiner.empty() && zipformer_joiner[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(zipformer_joiner, model_paths);
-    if (!resolved.empty()) {
-      zipformer_joiner = resolved;
+  // Zipformer joiner path
+  if (!zipformer_joiner.empty()) {
+    if (zipformer_joiner[0] == '/') {
+      struct stat buffer;
+      if (stat(zipformer_joiner.c_str(), &buffer) != 0) {
+        size_t pos = zipformer_joiner.find_last_of('/');
+        if (pos != std::string::npos) {
+          std::string filename = zipformer_joiner.substr(pos + 1);
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          std::string resolved = YamlConfig::FindFileInPaths(filename, model_paths);
+          if (!resolved.empty()) {
+            zipformer_joiner = resolved;
+          }
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(zipformer_joiner, model_paths);
+      if (!resolved.empty()) {
+        zipformer_joiner = resolved;
+      }
     }
   }
 
-  if (!punctuation_model.empty() && punctuation_model[0] != '/') {
-    auto model_paths = YamlConfig::GetDefaultModelPaths();
-    std::string resolved = YamlConfig::FindFileInPaths(punctuation_model, model_paths);
-    if (!resolved.empty()) {
-      punctuation_model = resolved;
+  // Punctuation model path
+  if (!punctuation_model.empty()) {
+    if (punctuation_model[0] == '/') {
+      struct stat buffer;
+      if (stat(punctuation_model.c_str(), &buffer) != 0) {
+        size_t pos = punctuation_model.find_last_of('/');
+        if (pos != std::string::npos) {
+          std::string filename = punctuation_model.substr(pos + 1);
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          std::string resolved = YamlConfig::FindFileInPaths(filename, model_paths);
+          if (!resolved.empty()) {
+            punctuation_model = resolved;
+          }
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(punctuation_model, model_paths);
+      if (!resolved.empty()) {
+        punctuation_model = resolved;
+      }
     }
   }
 

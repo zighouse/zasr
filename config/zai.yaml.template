@@ -1,10 +1,10 @@
-# ZAsR Server Configuration for zai.vim
+# ZASR Server Configuration for zai.vim
 #
 # This configuration is optimized for use with zai.vim plugin.
 # It uses relative paths from the deploy directory.
 #
 # Environment variables:
-#   DEPLOY_DIR - ZAsR deployment directory
+#   DEPLOY_DIR - ZASR deployment directory
 #   MODELS_DIR - Model storage directory (default: $DEPLOY_DIR/models)
 
 server:
@@ -63,5 +63,5 @@ logging:
   data_dir: ""  # Disable audio recording by default
 
 # Note: For zai.vim integration, set these environment variables:
-#   export DEPLOY_DIR=~/.local/share/zai.vim/zasr
+#   export DEPLOY_DIR=~/.local/share/zai/zasr
 #   export MODELS_DIR=$DEPLOY_DIR/models

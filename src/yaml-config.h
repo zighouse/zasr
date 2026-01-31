@@ -49,17 +49,27 @@ public:
   static std::string FindFileInPaths(const std::string& filename,
                                       const std::vector<std::string>& search_paths);
 
+  // Find file in a specific model directory
+  // Searches for filename in subdirectories that contain model_dir as part of their path
+  static std::string FindFileInModelDir(const std::vector<std::string>& search_paths,
+                                        const std::string& model_dir,
+                                        const std::string& filename);
+
   // Get default configuration search paths
   static std::vector<std::string> GetDefaultConfigPaths();
 
   // Get default model search paths
   static std::vector<std::string> GetDefaultModelPaths();
 
-  ~YamlConfig();
+  ~YamlConfig() = default;
 
 private:
+  // Helper function for recursive file search
+  static std::string FindFileRecursive(const std::string& base_path,
+                                       const std::string& filename);
+
   std::string error_;
-  void* yaml_root_;  // Opaque pointer to YAML::Node
+  std::string yaml_content_;  // YAML content as string (reparsed on each access)
 };
 
 }  // namespace zasr

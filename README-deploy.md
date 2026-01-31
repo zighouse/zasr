@@ -1,6 +1,6 @@
-# ZAsR Server Deployment Guide
+# ZASR Server Deployment Guide
 
-This guide covers deploying the ZAsR (Streaming ASR) server for production use or integration with other applications.
+This guide covers deploying the ZASR (Streaming ASR) server for production use or integration with other applications.
 
 ## Table of Contents
 
@@ -78,7 +78,7 @@ make -j$(nproc)
 
 ### Configuration File Format
 
-ZAsR uses YAML configuration files with environment variable expansion:
+ZASR uses YAML configuration files with environment variable expansion:
 
 ```yaml
 server:
@@ -328,21 +328,100 @@ Manual start:
 
 ## Troubleshooting
 
+### Quick Diagnosis Flow
+
+```
+Server won't start?
+├─ Run manually: ./bin/zasr-server --config config.yaml 2>&1
+├─ See error message?
+│  ├─ "Address already in use" → Port conflict (see below)
+│  ├─ "Cannot open file" → Config/Model not found
+│  ├─ "does not exist" → Model files missing
+│  └─ Other → Check log file
+└─ No error message?
+   └─ Check: binary exists, permissions, disk space
+```
+
 ### Server Won't Start
 
-**Check binary:**
+**Symptoms:**
+```bash
+$ zasrctl start
+Starting ZASR server...
+Failed to start server
+```
+
+**Note:** The `zasrctl` script redirects output to `/dev/null`, so error messages are not visible. Use the manual diagnosis steps below.
+
+**Diagnose the issue:**
+
+1. **Check if binary exists:**
 ```bash
 ls -l $DEPLOY_DIR/bin/zasr-server
+# Should show: -rwxr-xr-x 1 user user 35791496 Jan 31 21:35 zasr-server
 ```
 
-**Check configuration:**
+2. **Run server manually to see error messages:**
 ```bash
-$DEPLOY_DIR/bin/zasr-server --config $CONFIG --dry-run
+cd $DEPLOY_DIR
+./bin/zasr-server --config config/default.yaml 2>&1 | head -50
 ```
 
-**Check logs:**
+3. **Check for common errors:**
+
+   **Port already in use** (see [Port Already in Use](#port-already-in-use) section):
+   ```
+   [ERROR] Failed to start server: Address already in use
+   ```
+
+   **Configuration file not found:**
+   ```
+   Error loading YAML config: Cannot open file: ...
+   ```
+   Solution: Check config path or create default config.
+
+   **Model files not found:**
+   ```
+   Silero vad model file '.../silero_vad.int8.onnx' does not exist
+   Errors in config
+   ```
+   Solution: Download models or update config paths (see [Model Management](#model-management)).
+
+4. **Check server status:**
 ```bash
-tail -f $DEPLOY_DIR/logs/zasr.log
+# Check if process is running
+ps aux | grep zasr-server
+
+# Check PID file
+cat $DEPLOY_DIR/var/zasr.pid
+
+# Check if port is listening
+ss -tlnp | grep 2026
+```
+
+5. **Enable logging for debugging:**
+```bash
+# Start with log file
+zasrctl start -l /tmp/zasr-debug.log
+
+# Or run manually with logging
+cd $DEPLOY_DIR
+./bin/zasr-server --config config/default.yaml --log-file /tmp/zasr-debug.log 2>&1
+
+# Check the log
+tail -f /tmp/zasr-debug.log
+```
+
+**Quick fixes:**
+```bash
+# Kill any existing server
+pkill -9 zasr-server
+
+# Clean up stale PID file
+rm -f $DEPLOY_DIR/var/zasr.pid
+
+# Start fresh
+zasrctl start
 ```
 
 ### Models Not Found
@@ -365,16 +444,95 @@ grep "model:" $CONFIG
 
 ### Port Already in Use
 
-**Find process using port:**
+**Symptoms:**
 ```bash
-ss -tlnp | grep 2026
-lsof -i :2026
+$ zasrctl start
+Starting ZASR server...
+Failed to start server
+
+# Or in logs:
+[ERROR] Failed to start server: Address already in use
+asio listen error: asio.system:98 (Address already in use)
 ```
 
-**Change port in config:**
+**Diagnose the issue:**
+
+1. **Check what's using the port:**
+```bash
+# Find process using port 2026
+lsof -i :2026
+# Output: zasr-serv 27843 zhigang    9u  IPv4 107335      0t0  TCP *:2026 (LISTEN)
+
+# Or using ss
+ss -tlnp | grep 2026
+# Output: tcp    LISTEN    0    128    *:2026    *:*    users:(pid="27843",...)
+```
+
+2. **Check if zasr-server is already running:**
+```bash
+# Check status
+zasrctl status
+
+# Check for running processes
+ps aux | grep zasr-server
+
+# Check PID file
+cat $DEPLOY_DIR/var/zasr.pid
+```
+
+**Solutions:**
+
+**Option 1: Stop the existing server (recommended)**
+```bash
+# Use zasrctl to stop gracefully
+zasrctl stop
+
+# Or kill the specific PID
+kill 27843  # Use the PID from lsof output
+
+# Or force kill if needed
+kill -9 27843
+
+# Then start again
+zasrctl start
+```
+
+**Option 2: Kill all zasr-server processes**
+```bash
+# Kill all zasr-server processes
+pkill -9 zasr-server
+
+# Clean up stale PID file
+rm -f $DEPLOY_DIR/var/zasr.pid
+
+# Start fresh
+zasrctl start
+```
+
+**Option 3: Use a different port**
 ```yaml
+# Edit config file
 server:
   port: 2027  # Use different port
+```
+
+**Prevention:**
+
+Always use `zasrctl` to manage the server:
+```bash
+# Stop before starting new one
+zasrctl stop
+zasrctl start
+
+# Or restart directly
+zasrctl restart
+```
+
+**Debug mode (to see actual error):**
+```bash
+# Run server manually to see error messages
+cd $DEPLOY_DIR
+./bin/zasr-server --config config/default.yaml 2>&1 | head -50
 ```
 
 ### Memory Issues

@@ -30,7 +30,7 @@ NC='\033[0m'
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Download Sherpa-ONNX models for ZAsR server."
+    echo "Download Sherpa-ONNX models for ZASR server."
     echo ""
     echo "Options:"
     echo "  --dir DIR              Model directory (default: ./models)"
@@ -157,7 +157,7 @@ download_vad() {
     echo -e "\n${BLUE}=== Downloading Silero VAD Model ===${NC}"
 
     local version="v5.0.0"
-    local model_url="$BASE_URL/$model_version/silero_vad.tar.bz2"
+    local model_url="$BASE_URL/$version/silero_vad.tar.bz2"
     local model_file="$MODEL_DIR/vad/silero_vad.tar.bz2"
 
     download_file "$model_url" "$model_file"
@@ -237,7 +237,7 @@ download_punctuation() {
 
 # Interactive menu
 interactive_menu() {
-    echo -e "${BLUE}ZAsR Model Downloader${NC}"
+    echo -e "${BLUE}ZASR Model Downloader${NC}"
     echo "===================="
     echo ""
     echo "Select models to download:"

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# install.sh - ZAsR Server Installation Script
+# install.sh - ZASR Server Installation Script
 #
 # Usage: ./install.sh [OPTIONS]
 #
@@ -30,7 +30,7 @@ NC='\033[0m'
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Install ZAsR server to a target directory."
+    echo "Install ZASR server to a target directory."
     echo ""
     echo "Options:"
     echo "  --dir DIR              Installation directory (default: /opt/zasr)"
@@ -217,9 +217,9 @@ download_models() {
 # Create README
 create_readme() {
     cat > "$INSTALL_DIR/README.md" << 'EOF'
-# ZAsR Server Installation
+# ZASR Server Installation
 
-This directory contains the ZAsR (Streaming ASR) server installation.
+This directory contains the ZASR (Streaming ASR) server installation.
 
 ## Directory Structure
 
@@ -328,7 +328,7 @@ print_summary() {
 
 # Main execution
 main() {
-    echo -e "${BLUE}ZAsR Server Installation${NC}"
+    echo -e "${BLUE}ZASR Server Installation${NC}"
     echo "========================"
     echo ""
 

@@ -319,16 +319,32 @@ void ZAsrServer::OnMessage(connection_hdl hdl, server::message_ptr msg) {
     LOG_FILE_WARN(*log_stream_) << "Received message from unknown connection.";
     return;
   }
-  
+
   try {
     if (msg->get_opcode() == websocketpp::frame::opcode::text) {
       // 文本消息（认证等）
       connection->HandleTextMessage(msg->get_payload());
     } else if (msg->get_opcode() == websocketpp::frame::opcode::binary) {
       // 二进制消息（音频数据）
-      // 在工作线程中处理音频数据
+      // 在工作线程中处理音频数据，添加异常处理防止worker线程崩溃
       asio::post(io_work_, [connection, payload = msg->get_payload()]() {
-        connection->HandleBinaryMessage(payload.data(), payload.size());
+        try {
+          connection->HandleBinaryMessage(payload.data(), payload.size());
+        } catch (const std::exception& e) {
+          std::cerr << "Exception in binary message handler: " << e.what() << std::endl;
+          try {
+            connection->SendError(41040009, "Error processing audio data: " + std::string(e.what()));
+          } catch (...) {
+            // Ignore send errors
+          }
+        } catch (...) {
+          std::cerr << "Unknown exception in binary message handler" << std::endl;
+          try {
+            connection->SendError(41040009, "Unknown error processing audio data");
+          } catch (...) {
+            // Ignore send errors
+          }
+        }
       });
     } else {
       LOG_FILE_WARN(*log_stream_) << "Unsupported message opcode: "

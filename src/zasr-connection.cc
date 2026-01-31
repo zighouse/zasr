@@ -169,6 +169,11 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
       // 初始化ASR - 根据配置选择离线或在线识别器
       if (config.recognizer_type == RecognizerType::kSenseVoice) {
         // SenseVoice 模式：需要初始化 VAD
+        LOG_INFO() << "Initializing SenseVoice recognizer...";
+        LOG_INFO() << "VAD model path: " << config.silero_vad_model;
+        LOG_INFO() << "SenseVoice model path: " << config.sense_voice_model;
+        LOG_INFO() << "Tokens path: " << config.tokens_path;
+
         sherpa_onnx::cxx::VadModelConfig vad_config;
         vad_config.silero_vad.model = config.silero_vad_model;
 
@@ -191,13 +196,16 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
             config.sample_rate * config.vad_window_size_ms / 1000.0f);
 
         // 创建VAD实例
+        LOG_INFO() << "Creating VAD instance...";
         vad_ = std::make_unique<sherpa_onnx::cxx::VoiceActivityDetector>(
             sherpa_onnx::cxx::VoiceActivityDetector::Create(vad_config, 100.0f));  // 100秒缓冲区
 
         if (!vad_) {
+          LOG_ERROR() << "Failed to create VAD instance";
           SendError(ErrorCode::ERR_ERROR_PROCESSING_START_TRANSCRIPTION, "Failed to create VAD instance");
           return;
         }
+        LOG_INFO() << "VAD instance created successfully";
 
         // 使用 OfflineRecognizer (SenseVoice)
         sherpa_onnx::cxx::OfflineRecognizerConfig asr_config;
@@ -209,13 +217,16 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
         asr_config.model_config.provider = "cpu";
         asr_config.model_config.tokens = config.tokens_path;
 
+        LOG_INFO() << "Creating OfflineRecognizer instance...";
         offline_recognizer_ = std::make_unique<sherpa_onnx::cxx::OfflineRecognizer>(
             sherpa_onnx::cxx::OfflineRecognizer::Create(asr_config));
 
         if (!offline_recognizer_) {
+          LOG_ERROR() << "Failed to create OfflineRecognizer";
           SendError(ErrorCode::ERR_ERROR_PROCESSING_START_TRANSCRIPTION, "Failed to create OfflineRecognizer");
           return;
         }
+        LOG_INFO() << "OfflineRecognizer created successfully";
         use_online_recognizer_ = false;
       } else {
         // 使用 OnlineRecognizer (Streaming Zipformer)

@@ -23,7 +23,7 @@ NC='\033[0m'
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Verify Sherpa-ONNX models for ZAsR server."
+    echo "Verify Sherpa-ONNX models for ZASR server."
     echo ""
     echo "Options:"
     echo "  --dir DIR              Model directory (default: ./models)"
@@ -300,7 +300,7 @@ print_summary() {
 main() {
     parse_args "$@"
 
-    echo -e "${BLUE}ZAsR Model Verification${NC}"
+    echo -e "${BLUE}ZASR Model Verification${NC}"
     echo "========================="
     echo "Model directory: $MODEL_DIR"
 

@@ -7,49 +7,47 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <memory>
-
-// Forward declare and include yaml-cpp
-namespace YAML {
-class Node;
-}
+#include <dirent.h>
+#include <pwd.h>
 
 // Include yaml-cpp headers
 #include <yaml-cpp/yaml.h>
 
 namespace zasr {
 
-// Wrapper class to hold YAML::Node without including yaml-cpp in header
-class YamlNodeWrapper {
-public:
-  YamlNodeWrapper() : node_(std::make_unique<YAML::Node>()) {}
-  explicit YamlNodeWrapper(const YAML::Node& node) : node_(std::make_unique<YAML::Node>(node)) {}
-
-  YAML::Node* get() { return node_.get(); }
-  const YAML::Node* get() const { return node_.get(); }
-
-private:
-  std::unique_ptr<YAML::Node> node_;
-};
-
 bool YamlConfig::LoadFromFile(const std::string& filepath) {
   try {
-    auto root = std::make_unique<YamlNodeWrapper>(YAML::LoadFile(filepath));
+    // Read file content into string
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+      error_ = "Cannot open file: " + filepath;
+      return false;
+    }
 
-    yaml_root_ = root.release();
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    yaml_content_ = buffer.str();
+
+    // Validate YAML syntax
+    YAML::Load(yaml_content_);
     return true;
   } catch (const YAML::Exception& e) {
     error_ = std::string("YAML parse error: ") + e.what();
+    return false;
+  } catch (const std::exception& e) {
+    error_ = std::string("Error reading file: ") + e.what();
     return false;
   }
 }
 
 std::string YamlConfig::GetString(const std::string& key, const std::string& default_value) const {
-  if (!yaml_root_) {
+  if (yaml_content_.empty()) {
     return default_value;
   }
 
   try {
-    const YAML::Node* root = static_cast<YamlNodeWrapper*>(yaml_root_)->get();
+    // Parse YAML content on each access
+    YAML::Node root = YAML::Load(yaml_content_);
 
     // Support nested keys with "." separator
     std::vector<std::string> parts;
@@ -59,10 +57,10 @@ std::string YamlConfig::GetString(const std::string& key, const std::string& def
       parts.push_back(part);
     }
 
-    // Use a copy of the node to traverse
-    YAML::Node current = *root;
+    // Traverse the node hierarchy
+    YAML::Node current = root;
     for (const auto& p : parts) {
-      if (!current.IsMap() || !current[p]) {
+      if (!current.IsMap() || !current[p].IsDefined()) {
         return default_value;
       }
       current = current[p];
@@ -81,12 +79,12 @@ std::string YamlConfig::GetString(const std::string& key, const std::string& def
 }
 
 int YamlConfig::GetInt(const std::string& key, int default_value) const {
-  if (!yaml_root_) {
+  if (yaml_content_.empty()) {
     return default_value;
   }
 
   try {
-    const YAML::Node* root = static_cast<YamlNodeWrapper*>(yaml_root_)->get();
+    YAML::Node root = YAML::Load(yaml_content_);
 
     // Support nested keys with "." separator
     std::vector<std::string> parts;
@@ -96,8 +94,8 @@ int YamlConfig::GetInt(const std::string& key, int default_value) const {
       parts.push_back(part);
     }
 
-    // Use a copy of the node to traverse
-    YAML::Node current = *root;
+    // Traverse the node hierarchy
+    YAML::Node current = root;
     for (const auto& p : parts) {
       if (!current.IsMap() || !current[p]) {
         return default_value;
@@ -116,12 +114,12 @@ int YamlConfig::GetInt(const std::string& key, int default_value) const {
 }
 
 float YamlConfig::GetFloat(const std::string& key, float default_value) const {
-  if (!yaml_root_) {
+  if (yaml_content_.empty()) {
     return default_value;
   }
 
   try {
-    const YAML::Node* root = static_cast<YamlNodeWrapper*>(yaml_root_)->get();
+    YAML::Node root = YAML::Load(yaml_content_);
 
     // Support nested keys with "." separator
     std::vector<std::string> parts;
@@ -131,8 +129,8 @@ float YamlConfig::GetFloat(const std::string& key, float default_value) const {
       parts.push_back(part);
     }
 
-    // Use a copy of the node to traverse
-    YAML::Node current = *root;
+    // Traverse the node hierarchy
+    YAML::Node current = root;
     for (const auto& p : parts) {
       if (!current.IsMap() || !current[p]) {
         return default_value;
@@ -151,12 +149,12 @@ float YamlConfig::GetFloat(const std::string& key, float default_value) const {
 }
 
 bool YamlConfig::GetBool(const std::string& key, bool default_value) const {
-  if (!yaml_root_) {
+  if (yaml_content_.empty()) {
     return default_value;
   }
 
   try {
-    const YAML::Node* root = static_cast<YamlNodeWrapper*>(yaml_root_)->get();
+    YAML::Node root = YAML::Load(yaml_content_);
 
     // Support nested keys with "." separator
     std::vector<std::string> parts;
@@ -166,8 +164,8 @@ bool YamlConfig::GetBool(const std::string& key, bool default_value) const {
       parts.push_back(part);
     }
 
-    // Use a copy of the node to traverse
-    YAML::Node current = *root;
+    // Traverse the node hierarchy
+    YAML::Node current = root;
     for (const auto& p : parts) {
       if (!current.IsMap() || !current[p]) {
         return default_value;
@@ -188,12 +186,12 @@ bool YamlConfig::GetBool(const std::string& key, bool default_value) const {
 std::vector<std::string> YamlConfig::GetStringList(const std::string& key) const {
   std::vector<std::string> result;
 
-  if (!yaml_root_) {
+  if (yaml_content_.empty()) {
     return result;
   }
 
   try {
-    const YAML::Node* root = static_cast<YamlNodeWrapper*>(yaml_root_)->get();
+    YAML::Node root = YAML::Load(yaml_content_);
 
     // Support nested keys with "." separator
     std::vector<std::string> parts;
@@ -204,7 +202,7 @@ std::vector<std::string> YamlConfig::GetStringList(const std::string& key) const
     }
 
     // Use a copy of the node to traverse
-    YAML::Node current = *root;
+    YAML::Node current = root;
     for (const auto& p : parts) {
       if (!current.IsMap() || !current[p]) {
         return result;
@@ -229,12 +227,12 @@ std::vector<std::string> YamlConfig::GetStringList(const std::string& key) const
 }
 
 bool YamlConfig::HasKey(const std::string& key) const {
-  if (!yaml_root_) {
+  if (yaml_content_.empty()) {
     return false;
   }
 
   try {
-    const YAML::Node* root = static_cast<YamlNodeWrapper*>(yaml_root_)->get();
+    YAML::Node root = YAML::Load(yaml_content_);
 
     // Support nested keys with "." separator
     std::vector<std::string> parts;
@@ -244,8 +242,8 @@ bool YamlConfig::HasKey(const std::string& key) const {
       parts.push_back(part);
     }
 
-    // Use a copy of the node to traverse
-    YAML::Node current = *root;
+    // Traverse the node hierarchy
+    YAML::Node current = root;
     for (const auto& p : parts) {
       if (!current.IsMap() || !current[p]) {
         return false;
@@ -259,18 +257,47 @@ bool YamlConfig::HasKey(const std::string& key) const {
   }
 }
 
-YamlConfig::~YamlConfig() {
-  if (yaml_root_) {
-    delete static_cast<YamlNodeWrapper*>(yaml_root_);
-    yaml_root_ = nullptr;
-  }
-}
-
 std::string YamlConfig::ExpandEnvVars(const std::string& str) {
   std::string result = str;
-  size_t pos = 0;
 
-  // Expand ${VAR} style
+  // First, expand ~ to home directory
+  size_t tilde_pos = 0;
+  while ((tilde_pos = result.find('~', tilde_pos)) != std::string::npos) {
+    // Check if it's really a home directory reference (~ or ~/path)
+    // Skip if it's part of a larger word (like http://)
+    if (tilde_pos > 0 &&
+        (std::isalnum(static_cast<unsigned char>(result[tilde_pos - 1])) ||
+         result[tilde_pos - 1] == '_' ||
+         result[tilde_pos - 1] == '/')) {
+      tilde_pos++;
+      continue;
+    }
+
+    // Check if ~ is at start or followed by /
+    if (tilde_pos == 0 || result[tilde_pos + 1] == '/') {
+      const char* home = getenv("HOME");
+      if (home) {
+        size_t home_len = strlen(home);
+        if (tilde_pos + 1 < result.length() && result[tilde_pos + 1] == '/') {
+          // ~/path -> /home/user/path
+          result.replace(tilde_pos, 1, home);
+          tilde_pos += home_len;
+        } else {
+          // ~ -> /home/user
+          result.replace(tilde_pos, 1, home);
+          tilde_pos += home_len;
+        }
+      } else {
+        // HOME not set, keep ~
+        tilde_pos++;
+      }
+    } else {
+      tilde_pos++;
+    }
+  }
+
+  // Then expand ${VAR} style
+  size_t pos = 0;
   while ((pos = result.find("${", pos)) != std::string::npos) {
     size_t end = result.find('}', pos);
     if (end == std::string::npos) {
@@ -341,6 +368,80 @@ std::string YamlConfig::FindFileInPaths(const std::string& filename,
     if (stat(full_path.c_str(), &buffer) == 0) {
       return full_path;
     }
+  }
+
+  // If not found, try recursive search in default paths
+  for (const auto& search_path : search_paths) {
+    std::string result = FindFileRecursive(search_path, filename);
+    if (!result.empty()) {
+      return result;
+    }
+  }
+
+  return "";
+}
+
+// Helper function for recursive file search
+std::string YamlConfig::FindFileRecursive(const std::string& base_path,
+                                          const std::string& filename) {
+  // First, try direct path
+  std::string direct_path = base_path + "/" + filename;
+  struct stat buffer;
+  if (stat(direct_path.c_str(), &buffer) == 0) {
+    return direct_path;
+  }
+
+  // Try as subdirectory path (e.g., "sense-voice/model.onnx")
+  DIR* dir = opendir(base_path.c_str());
+  if (!dir) {
+    return "";
+  }
+
+  struct dirent* entry;
+  while ((entry = readdir(dir)) != nullptr) {
+    if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+      std::string sub_path = base_path + "/" + entry->d_name;
+      std::string result = FindFileRecursive(sub_path, filename);
+      if (!result.empty()) {
+        closedir(dir);
+        return result;
+      }
+    }
+  }
+
+  closedir(dir);
+  return "";
+}
+
+// Find file in a specific model directory
+std::string YamlConfig::FindFileInModelDir(const std::vector<std::string>& search_paths,
+                                          const std::string& model_dir,
+                                          const std::string& filename) {
+  // Search in each base path for a subdirectory matching model_dir
+  for (const auto& base_path : search_paths) {
+    DIR* dir = opendir(base_path.c_str());
+    if (!dir) {
+      continue;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+      if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+        std::string subdir_name = entry->d_name;
+        // Check if this subdirectory matches or contains the model_dir name
+        if (subdir_name.find(model_dir) != std::string::npos) {
+          // Found matching directory, check for the file
+          std::string full_path = base_path + "/" + subdir_name + "/" + filename;
+          struct stat buffer;
+          if (stat(full_path.c_str(), &buffer) == 0) {
+            closedir(dir);
+            return full_path;
+          }
+        }
+      }
+    }
+
+    closedir(dir);
   }
 
   return "";
