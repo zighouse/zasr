@@ -161,18 +161,10 @@ verify_checksum() {
 download_vad() {
     echo -e "\n${BLUE}=== Downloading Silero VAD Model ===${NC}"
 
-    local version="v5.0.0"
-    local model_url="$BASE_URL/$version/silero_vad.tar.bz2"
-    local model_file="$MODEL_DIR/vad/silero_vad.tar.bz2"
+    local model_url="$BASE_URL/asr-models/silero_vad.onnx"
+    local model_file="$MODEL_DIR/vad/silero_vad.onnx"
 
     download_file "$model_url" "$model_file"
-
-    # Extract
-    if [ -f "$model_file" ]; then
-        echo -e "${BLUE}Extracting...${NC}"
-        tar -xjf "$model_file" -C "$MODEL_DIR/vad/" --strip-components=1
-        rm -f "$model_file"
-    fi
 
     echo -e "${GREEN}VAD model downloaded${NC}"
 }
@@ -331,6 +323,24 @@ main() {
     echo "     export MODELS_DIR=$MODEL_DIR"
     echo "  2. Start the server:"
     echo "     ./zasrctl start"
+    echo ""
+    echo -e "${BLUE}More Models Available${NC}"
+    echo "You can download additional pretrained models from sherpa-onnx official website:"
+    echo ""
+    echo "  Online Transducer models (streaming, low latency):"
+    echo "    https://k2-fsa.github.io/sherpa/onnx/pretrained_models/online-transducer/index.html"
+    echo ""
+    echo "  Offline Transducer models (batch, high accuracy):"
+    echo "    https://k2-fsa.github.io/sherpa/onnx/pretrained_models/offline-transducer/index.html"
+    echo ""
+    echo "  VAD models:"
+    echo "    https://k2-fsa.github.io/sherpa/onnx/pretrained_models/vad/index.html"
+    echo ""
+    echo "  Punctuation models:"
+    echo "    https://k2-fsa.github.io/sherpa/onnx/pretrained_models/punctuation/index.html"
+    echo ""
+    echo "  All pretrained models index:"
+    echo "    https://k2-fsa.github.io/sherpa/onnx/pretrained_models/index.html"
 }
 
 main "$@"
