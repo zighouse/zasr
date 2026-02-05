@@ -16,8 +16,9 @@ namespace zasr {
 
 // 识别器类型枚举
 enum class RecognizerType {
-  kSenseVoice,       // SenseVoice (模拟流式，使用 OfflineRecognizer + VAD)
-  kStreamingZipformer  // Streaming Zipformer (真正流式，使用 OnlineRecognizer)
+  kSenseVoice,           // SenseVoice (模拟流式，使用 OfflineRecognizer + VAD)
+  kStreamingZipformer,   // Streaming Zipformer (真正流式，使用 OnlineRecognizer)
+  kStreamingParaformer   // Streaming Paraformer (真正流式，使用 OnlineRecognizer)
 };
 
 // 辅助函数：获取默认模型路径
@@ -61,6 +62,10 @@ struct ZAsrConfig {
   std::string zipformer_encoder;
   std::string zipformer_decoder;
   std::string zipformer_joiner;
+
+  // Streaming Paraformer configuration (OnlineRecognizer)
+  std::string paraformer_encoder;
+  std::string paraformer_decoder;
 
   // Punctuation configuration
   bool enable_punctuation = false;

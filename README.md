@@ -305,7 +305,7 @@ Key sherpa-onnx classes used:
 Server Configuration:
   --host arg                 Server host (default: 0.0.0.0)
   --port arg                 Server port (default: 2026)
-  --max-connections arg      Maximum connections (default: 256)
+  --max-connections arg      Maximum connections (default: 8)
   --worker-threads arg       Worker threads (default: 4)
 
 Audio Configuration:
@@ -353,7 +353,7 @@ Logging:
 
 - Default sample rate: 16000 Hz
 - Default port: 2026
-- Default max connections: 256
+- Default max connections: 8
 - Default worker threads: 4
 - Audio format: PCM s16le (16-bit signed little-endian)
 

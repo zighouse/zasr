@@ -44,7 +44,7 @@ void PrintUsage(const char* program_name) {
   std::cout << "Options (override config file):\n";
   std::cout << "  --host <address>           Server host address (default: 0.0.0.0)\n";
   std::cout << "  --port <port>              Server port (default: 2026)\n";
-  std::cout << "  --max-connections <num>    Maximum concurrent connections (default: 256)\n";
+  std::cout << "  --max-connections <num>    Maximum concurrent connections (default: 8)\n";
   std::cout << "  --worker-threads <num>     Number of worker threads (default: 4)\n";
   std::cout << "\n";
   std::cout << "  --silero-vad-model <path>  Path to Silero VAD model file (required for sense-voice)\n";
@@ -53,11 +53,13 @@ void PrintUsage(const char* program_name) {
   std::cout << "  --min-speech-duration <s>  Minimum speech duration in seconds (default: 0.25) [sense-voice only]\n";
   std::cout << "  --max-speech-duration <s>  Maximum speech duration in seconds (default: 8.0) [sense-voice only]\n";
   std::cout << "\n";
-  std::cout << "  --recognizer-type <type>  Recognizer type: sense-voice or streaming-zipformer (default: sense-voice)\n";
+  std::cout << "  --recognizer-type <type>  Recognizer type: sense-voice, streaming-zipformer, or streaming-paraformer (default: sense-voice)\n";
   std::cout << "  --sense-voice-model <path> Path to SenseVoice model file (required for sense-voice)\n";
   std::cout << "  --zipformer-encoder <path> Path to Zipformer encoder model (required for streaming-zipformer)\n";
   std::cout << "  --zipformer-decoder <path> Path to Zipformer decoder model (required for streaming-zipformer)\n";
   std::cout << "  --zipformer-joiner <path>  Path to Zipformer joiner model (required for streaming-zipformer)\n";
+  std::cout << "  --paraformer-encoder <path> Path to Paraformer encoder model (required for streaming-paraformer)\n";
+  std::cout << "  --paraformer-decoder <path> Path to Paraformer decoder model (required for streaming-paraformer)\n";
   std::cout << "  --tokens <path>           Path to tokens.txt file (required)\n";
   std::cout << "  --num-threads <num>       Number of threads for ASR computation (default: 2)\n";
   std::cout << "  --use-itn <0|1>           Use Inverse Text Normalization (default: 1)\n";
@@ -81,7 +83,7 @@ void PrintUsage(const char* program_name) {
   std::cout << "    --sense-voice-model /models/k2-fsa/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \\\n";
   std::cout << "    --tokens /models/k2-fsa/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt \\\n";
   std::cout << "    --port 2026 \\\n";
-  std::cout << "    --max-connections 256 \\\n";
+  std::cout << "    --max-connections 8 \\\n";
   std::cout << "    --log-file /var/log/zasr.log\n";
 }
 

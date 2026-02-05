@@ -108,9 +108,11 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
         recognizer_type = RecognizerType::kSenseVoice;
       } else if (strcmp(value, "streaming-zipformer") == 0) {
         recognizer_type = RecognizerType::kStreamingZipformer;
+      } else if (strcmp(value, "streaming-paraformer") == 0) {
+        recognizer_type = RecognizerType::kStreamingParaformer;
       } else {
         std::cerr << "Error: Invalid --recognizer-type '" << value
-                  << "'. Must be 'sense-voice' or 'streaming-zipformer'\n";
+                  << "'. Must be 'sense-voice', 'streaming-zipformer', or 'streaming-paraformer'\n";
         return false;
       }
     }
@@ -123,6 +125,8 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
   parseString("--zipformer-encoder", zipformer_encoder);
   parseString("--zipformer-decoder", zipformer_decoder);
   parseString("--zipformer-joiner", zipformer_joiner);
+  parseString("--paraformer-encoder", paraformer_encoder);
+  parseString("--paraformer-decoder", paraformer_decoder);
 
   // Processing configuration
   parseFloat("--vad-window-size-ms", vad_window_size_ms);
@@ -183,6 +187,8 @@ bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
   std::string asr_type = config.GetString("asr.type", "sense-voice");
   if (asr_type == "streaming-zipformer") {
     recognizer_type = RecognizerType::kStreamingZipformer;
+  } else if (asr_type == "streaming-paraformer") {
+    recognizer_type = RecognizerType::kStreamingParaformer;
   } else {
     recognizer_type = RecognizerType::kSenseVoice;
   }
@@ -195,6 +201,11 @@ bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
     // SenseVoice models
     sense_voice_model = config.GetString("asr.sense_voice.model", sense_voice_model);
     tokens_path = config.GetString("asr.sense_voice.tokens", tokens_path);
+  } else if (recognizer_type == RecognizerType::kStreamingParaformer) {
+    // Streaming Paraformer models
+    paraformer_encoder = config.GetString("asr.streaming_paraformer.encoder", paraformer_encoder);
+    paraformer_decoder = config.GetString("asr.streaming_paraformer.decoder", paraformer_decoder);
+    tokens_path = config.GetString("asr.streaming_paraformer.tokens", tokens_path);
   } else {
     // Streaming Zipformer models
     zipformer_encoder = config.GetString("asr.streaming_zipformer.encoder", zipformer_encoder);
@@ -466,6 +477,16 @@ bool ZAsrConfig::Validate() const {
       std::cerr << "Error: --sense-voice-model is required for recognizer-type 'sense-voice'\n";
       return false;
     }
+  } else if (recognizer_type == RecognizerType::kStreamingParaformer) {
+    // Streaming Paraformer 不需要 VAD，只需要两个模型文件
+    if (paraformer_encoder.empty()) {
+      std::cerr << "Error: --paraformer-encoder is required for recognizer-type 'streaming-paraformer'\n";
+      return false;
+    }
+    if (paraformer_decoder.empty()) {
+      std::cerr << "Error: --paraformer-decoder is required for recognizer-type 'streaming-paraformer'\n";
+      return false;
+    }
   } else if (recognizer_type == RecognizerType::kStreamingZipformer) {
     // Streaming Zipformer 不需要 VAD，只需要三个模型文件
     if (zipformer_encoder.empty()) {
@@ -581,6 +602,10 @@ std::string ZAsrConfig::ToString() const {
   if (recognizer_type == RecognizerType::kSenseVoice) {
     os << "    Type: sense-voice (simulated streaming)\n";
     os << "    Model: " << sense_voice_model << "\n";
+  } else if (recognizer_type == RecognizerType::kStreamingParaformer) {
+    os << "    Type: streaming-paraformer (true streaming)\n";
+    os << "    Encoder: " << paraformer_encoder << "\n";
+    os << "    Decoder: " << paraformer_decoder << "\n";
   } else {
     os << "    Type: streaming-zipformer (true streaming)\n";
     os << "    Encoder: " << zipformer_encoder << "\n";

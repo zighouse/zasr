@@ -236,20 +236,39 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
         LOG_INFO() << "OfflineRecognizer created successfully";
         use_online_recognizer_ = false;
       } else {
-        // 使用 OnlineRecognizer (Streaming Zipformer)
-        // 注意：streaming-zipformer 不需要 VAD，使用内置的端点检测
+        // 使用 OnlineRecognizer (Streaming Zipformer 或 Streaming Paraformer)
+        // 注意：streaming 识别器不需要 VAD，使用内置的端点检测
         sherpa_onnx::cxx::OnlineRecognizerConfig asr_config;
         asr_config.feat_config.sample_rate = config.sample_rate;
         asr_config.feat_config.feature_dim = 80;
-
-        asr_config.model_config.transducer.encoder = config.zipformer_encoder;
-        asr_config.model_config.transducer.decoder = config.zipformer_decoder;
-        asr_config.model_config.transducer.joiner = config.zipformer_joiner;
         asr_config.model_config.tokens = config.tokens_path;
         asr_config.model_config.num_threads = config.num_threads;
         asr_config.model_config.provider = "cpu";
         asr_config.model_config.debug = false;
-        asr_config.model_config.model_type = "transducer";
+
+        if (config.recognizer_type == RecognizerType::kStreamingParaformer) {
+          // Streaming Paraformer 配置
+          LOG_INFO() << "Initializing Streaming Paraformer recognizer...";
+          LOG_INFO() << "Encoder path: " << config.paraformer_encoder;
+          LOG_INFO() << "Decoder path: " << config.paraformer_decoder;
+          LOG_INFO() << "Tokens path: " << config.tokens_path;
+
+          asr_config.model_config.paraformer.encoder = config.paraformer_encoder;
+          asr_config.model_config.paraformer.decoder = config.paraformer_decoder;
+          asr_config.model_config.model_type = "paraformer";
+        } else {
+          // Streaming Zipformer 配置
+          LOG_INFO() << "Initializing Streaming Zipformer recognizer...";
+          LOG_INFO() << "Encoder path: " << config.zipformer_encoder;
+          LOG_INFO() << "Decoder path: " << config.zipformer_decoder;
+          LOG_INFO() << "Joiner path: " << config.zipformer_joiner;
+          LOG_INFO() << "Tokens path: " << config.tokens_path;
+
+          asr_config.model_config.transducer.encoder = config.zipformer_encoder;
+          asr_config.model_config.transducer.decoder = config.zipformer_decoder;
+          asr_config.model_config.transducer.joiner = config.zipformer_joiner;
+          asr_config.model_config.model_type = "transducer";
+        }
 
         // 启用端点检测，实现自动断句
         asr_config.enable_endpoint = true;
@@ -257,6 +276,7 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
         asr_config.rule2_min_trailing_silence = 0.8;
         asr_config.rule3_min_utterance_length = 10;   // 最短10ms的语音
 
+        LOG_INFO() << "Creating OnlineRecognizer instance...";
         online_recognizer_ = std::make_unique<sherpa_onnx::cxx::OnlineRecognizer>(
             sherpa_onnx::cxx::OnlineRecognizer::Create(asr_config));
 
@@ -264,6 +284,7 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
           SendError(ErrorCode::ERR_ERROR_PROCESSING_START_TRANSCRIPTION, "Failed to create OnlineRecognizer");
           return;
         }
+        LOG_INFO() << "OnlineRecognizer created successfully";
         use_online_recognizer_ = true;
       }
 

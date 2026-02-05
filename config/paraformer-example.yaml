@@ -1,0 +1,60 @@
+# ZASR Server Configuration for Streaming-Paraformer
+# This configuration uses streaming-paraformer model for low-latency ASR
+#
+# Model path: /dat/zhigang/models/k2-fsa/sherpa-onnx-streaming-paraformer-trilingual-zh-cantonese-en
+# Language support: Chinese (普通话), Cantonese (粤语), English
+
+server:
+  host: "0.0.0.0"
+  port: 2026
+  max_connections: 8
+  worker_threads: 4
+
+audio:
+  sample_rate: 16000
+  sample_width: 2
+
+# VAD configuration - not required for streaming-paraformer
+vad:
+  enabled: false  # streaming-paraformer has built-in endpoint detection
+
+# ASR configuration - streaming-paraformer
+asr:
+  type: "streaming-paraformer"
+  num_threads: 2
+  use_itn: true
+
+  # Streaming Paraformer models
+  # Trilingual model: 中粤英 (Chinese-Cantonese-English)
+  streaming_paraformer:
+    encoder: "~/.cache/sherpa-onnx/sherpa-onnx-streaming-paraformer-trilingual-zh-cantonese-en/encoder.int8.onnx"
+    decoder: "~/.cache/sherpa-onnx/sherpa-onnx-streaming-paraformer-trilingual-zh-cantonese-en/decoder.int8.onnx"
+    tokens:  "~/.cache/sherpa-onnx/sherpa-onnx-streaming-paraformer-trilingual-zh-cantonese-en/tokens.txt"
+
+# Punctuation configuration
+punctuation:
+  enabled: true
+  model: "~/.cache/sherpa-onnx/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx"
+
+# Processing configuration
+processing:
+  vad_window_size_ms: 30
+  update_interval_ms: 200
+  max_batch_size: 5
+
+# Timeout configuration
+timeouts:
+  connection: 15
+  recognition: 30
+
+# Logging configuration
+logging:
+  file: ""
+  level: "info"
+  data_dir: ""
+
+# Model search paths
+model_paths:
+  - "${DEPLOY_DIR}/models"
+  - "${HOME}/.cache/sherpa-onnx"
+  - "/usr/local/share/sherpa-onnx"
