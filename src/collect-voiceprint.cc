@@ -13,6 +13,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <sys/stat.h>
 
 // 包含我们的头文件(speaker-identifier.h 已经包含了 sherpa-onnx C API)
 #include "speaker-identifier.h"
@@ -20,6 +21,46 @@
 #include "zasr-config.h"
 
 using namespace zasr;
+
+// 辅助函数：计算字符串的显示宽度（中文算2，英文算1）
+static int GetDisplayWidth(const std::string& str) {
+  int width = 0;
+  size_t i = 0;
+  while (i < str.length()) {
+    unsigned char c = static_cast<unsigned char>(str[i]);
+    if (c < 0x80) {
+      // ASCII 字符
+      width += 1;
+      i++;
+    } else if ((c & 0xE0) == 0xC0) {
+      // 2字节 UTF-8 字符（少见）
+      width += 2;
+      i += 2;
+    } else if ((c & 0xF0) == 0xE0) {
+      // 3字节 UTF-8 字符（中文）
+      width += 2;
+      i += 3;
+    } else if ((c & 0xF8) == 0xF0) {
+      // 4字节 UTF-8 字符（罕见）
+      width += 2;
+      i += 4;
+    } else {
+      // 无效字节，按1算
+      width += 1;
+      i++;
+    }
+  }
+  return width;
+}
+
+// 辅助函数：填充字符串到指定显示宽度
+static std::string PadToWidth(const std::string& str, int target_width) {
+  int current_width = GetDisplayWidth(str);
+  if (current_width >= target_width) {
+    return str;
+  }
+  return str + std::string(target_width - current_width, ' ');
+}
 
 // 打印使用说明
 void PrintUsage(const char* program_name) {
@@ -77,19 +118,19 @@ int ListSpeakers(VoicePrintManager& manager) {
 
   std::cout << "\nRegistered speakers (" << speakers.size() << "):\n";
   std::cout << std::string(80, '-') << "\n";
-  std::cout << std::left << std::setw(15) << "ID"
-            << std::setw(20) << "Name"
-            << std::setw(20) << "Created At"
-            << std::setw(10) << "Samples"
+  std::cout << PadToWidth("ID", 15) << " "
+            << PadToWidth("Name", 20) << " "
+            << PadToWidth("Created At", 20) << " "
+            << PadToWidth("Samples", 10) << " "
             << "Notes" << "\n";
   std::cout << std::string(80, '-') << "\n";
 
   for (const auto& speaker : speakers) {
-    std::cout << std::left << std::setw(15) << speaker.id
-              << std::setw(20) << speaker.name
-              << std::setw(20) << speaker.created_at
-              << std::setw(10) << speaker.num_samples
-              << speaker.metadata.notes << "\n";
+    std::cout << PadToWidth(speaker.id, 15) << " ";
+    std::cout << PadToWidth(speaker.name, 20) << " ";
+    std::cout << PadToWidth(speaker.created_at, 20) << " ";
+    std::cout << PadToWidth(std::to_string(speaker.num_samples), 10) << " ";
+    std::cout << speaker.metadata.notes << "\n";
   }
   std::cout << std::string(80, '-') << "\n";
 
@@ -150,11 +191,27 @@ int main(int argc, char* argv[]) {
   std::string threads_str = FindArg(args, "--threads");
   bool verbose = HasArg(args, "--verbose");
 
-   // If没有指定模型，使用默认路径
+  // If没有指定模型，使用默认路径
   if (model.empty()) {
-    model = GetDefaultModelPath("speaker-recognition-model/");
-    // 检查目录是否存在
-    // TODO: 实现更智能的模型查找逻辑
+    // Try to find speaker embedding model in default location
+    // Preferred: nemo_en_titanet_small.onnx (faster)
+    // Alternative: 3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx (Chinese)
+    std::string model_dir = GetDefaultModelPath("speaker-recognition-models/");
+
+    // Try nemo model first (faster)
+    std::string nemo_model = model_dir + "nemo_en_titanet_small.onnx";
+    std::string ds_model = model_dir + "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx";
+
+    struct stat buffer;
+    if (stat(nemo_model.c_str(), &buffer) == 0) {
+      model = nemo_model;
+      std::cerr << "Using speaker model: " << model << std::endl;
+    } else if (stat(ds_model.c_str(), &buffer) == 0) {
+      model = ds_model;
+      std::cerr << "Using speaker model: " << model << std::endl;
+    } else {
+      model = model_dir + "nemo_en_titanet_small.onnx"; // Default fallback
+    }
   }
 
   // 配置管理器
