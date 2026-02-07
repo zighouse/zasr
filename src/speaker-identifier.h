@@ -133,8 +133,8 @@ class ZSpeakerIdentifier {
   // 从 WAV 文件识别说话人
   IdentificationResult IdentifyFromWav(const std::string& wav_path);
 
-  // 添加说话人（运行时动态添加）
-  bool AddSpeaker(const std::string& name, const std::vector<std::string>& wav_files);
+  // 添加说话人（运行时动态添加），返回 speaker_id，失败返回空字符串
+  std::string AddSpeaker(const std::string& name, const std::vector<std::string>& wav_files);
 
   // 获取当前已注册的说话人数量
   size_t GetRegisteredSpeakerCount() const {

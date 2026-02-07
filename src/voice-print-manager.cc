@@ -45,7 +45,7 @@ class VoicePrintManager::Impl {
     sid_config.num_threads = config_.num_threads;
     sid_config.debug = config_.debug;
     sid_config.provider = config_.provider;
-    sid_config.voice_print_db = db_.GetIndexPath();
+    sid_config.voice_print_db = db_.GetDatabasePath();
     sid_config.similarity_threshold = 0.75f;
     sid_config.enable_auto_track = true;
 
@@ -162,22 +162,15 @@ std::string VoicePrintManager::AddSpeaker(
     const std::string& gender,
     const std::string& language,
     const std::string& notes) {
-   // Add speaker using ZSpeakerIdentifier
-  if (!impl_->GetIdentifier().AddSpeaker(name, audio_files)) {
+   // Add speaker using ZSpeakerIdentifier (now returns speaker_id directly)
+  std::string speaker_id = impl_->GetIdentifier().AddSpeaker(name, audio_files);
+  if (speaker_id.empty()) {
     LOG_ERROR() << "Failed to add speaker: " << name;
     return "";
   }
 
-   // Get speaker_id from database
-  auto speakers = impl_->GetDatabase().GetAllVoicePrints();
-  for (const auto& speaker : speakers) {
-    if (speaker.name == name) {
-      LOG_INFO() << "Successfully added speaker: " << speaker.id << " (" << name << ")";
-      return speaker.id;
-    }
-  }
-
-  return "";
+  LOG_INFO() << "Successfully added speaker: " << speaker_id << " (" << name << ")";
+  return speaker_id;
 }
 
 std::string VoicePrintManager::AddSpeaker(

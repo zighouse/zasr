@@ -327,17 +327,17 @@ ZSpeakerIdentifier::IdentificationResult ZSpeakerIdentifier::IdentifyFromWav(
   return result;
 }
 
-bool ZSpeakerIdentifier::AddSpeaker(
+std::string ZSpeakerIdentifier::AddSpeaker(
     const std::string& name,
     const std::vector<std::string>& wav_files) {
   if (!initialized_) {
     LOG_ERROR() << "ZSpeakerIdentifier not initialized";
-    return false;
+    return "";
   }
 
   if (wav_files.empty()) {
     LOG_ERROR() << "Audio file list is empty";
-    return false;
+    return "";
   }
 
   // 提取所有 embedding
@@ -355,7 +355,7 @@ bool ZSpeakerIdentifier::AddSpeaker(
 
   if (embeddings.empty()) {
     LOG_ERROR() << "Failed to extract embedding from any audio file";
-    return false;
+    return "";
   }
 
   // 构造 C API 需要的 embedding 指针数组
@@ -369,7 +369,7 @@ bool ZSpeakerIdentifier::AddSpeaker(
   if (!SherpaOnnxSpeakerEmbeddingManagerAddList(
           manager_.get(), name.c_str(), embedding_ptrs.data())) {
     LOG_ERROR() << "Failed to add speaker to manager: " << name;
-    return false;
+    return "";
   }
 
    // Save to database
@@ -393,12 +393,12 @@ bool ZSpeakerIdentifier::AddSpeaker(
     LOG_ERROR() << "Failed to save to database";
     // Remove from manager
     SherpaOnnxSpeakerEmbeddingManagerRemove(manager_.get(), name.c_str());
-    return false;
+    return "";
   }
 
   LOG_INFO() << "Successfully added speaker: " << speaker_id << " (" << name << ")";
 
-  return true;
+  return speaker_id;
 }
 
 }  // namespace zasr

@@ -150,10 +150,8 @@ VoicePrintDatabase::VoicePrintDatabase(const std::string& db_path)
 }
 
 VoicePrintDatabase::~VoicePrintDatabase() {
-  // 自动保存
-  if (!voice_prints_.empty() || !unknown_speakers_.empty()) {
-    Save();
-  }
+  // 不再自动保存，避免多个对象竞争写入文件
+  // 数据应该在 AddVoicePrint/RemoveVoicePrint 等操作后立即保存
 }
 
 bool VoicePrintDatabase::CreateDirectories() {
@@ -303,6 +301,7 @@ bool VoicePrintDatabase::SaveIndex() const {
     }
 
     out << root;
+    out.flush();
     out.close();
 
     LOG_INFO() << "Successfully saved voice print DB: " << index_path;
@@ -374,6 +373,11 @@ bool VoicePrintDatabase::AddVoicePrint(
 
   LOG_INFO() << "Add/update voice print: " << metadata.id << " (" << metadata.name << ")";
 
+  // Save to file immediately to ensure data persistence
+  if (!SaveIndex()) {
+    std::cerr << "Warning: Failed to save database after adding voice print" << std::endl;
+  }
+
   return true;
 }
 
@@ -392,6 +396,12 @@ bool VoicePrintDatabase::RemoveVoicePrint(const std::string& speaker_id) {
   updated_at_ = GetCurrentTimestamp();
 
   LOG_INFO() << "Remove voice print: " << speaker_id;
+
+  // Save to file immediately to ensure data persistence
+  if (!SaveIndex()) {
+    std::cerr << "Warning: Failed to save database after removing voice print" << std::endl;
+  }
+
   return true;
 }
 
@@ -407,6 +417,12 @@ bool VoicePrintDatabase::UpdateSpeakerName(const std::string& speaker_id,
   updated_at_ = GetCurrentTimestamp();
 
   LOG_INFO() << "Update speaker name: " << speaker_id << " -> " << new_name;
+
+  // Save to file immediately to ensure data persistence
+  if (!SaveIndex()) {
+    std::cerr << "Warning: Failed to save database after renaming speaker" << std::endl;
+  }
+
   return true;
 }
 
