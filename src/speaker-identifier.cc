@@ -7,6 +7,7 @@
 
 #include "speaker-identifier.h"
 #include "zasr-logger.h"
+#include "zasr-config.h"
 
 #include <cstring>
 #include <stdexcept>
@@ -15,6 +16,7 @@
 #include <fstream>
 #include <chrono>
 #include <iomanip>
+#include <set>
 
 namespace zasr {
 
@@ -329,7 +331,8 @@ ZSpeakerIdentifier::IdentificationResult ZSpeakerIdentifier::IdentifyFromWav(
 
 std::string ZSpeakerIdentifier::AddSpeaker(
     const std::string& name,
-    const std::vector<std::string>& wav_files) {
+    const std::vector<std::string>& wav_files,
+    bool force) {
   if (!initialized_) {
     LOG_ERROR() << "ZSpeakerIdentifier not initialized";
     return "";
@@ -338,6 +341,36 @@ std::string ZSpeakerIdentifier::AddSpeaker(
   if (wav_files.empty()) {
     LOG_ERROR() << "Audio file list is empty";
     return "";
+  }
+
+  // 检测说话人数量（如果不是强制模式）
+  if (!force) {
+    bool has_multiple_speakers = false;
+    std::string multi_speaker_file;
+
+    for (const auto& wav_file : wav_files) {
+      int num_speakers = DetectNumSpeakers(wav_file);
+      if (num_speakers <= 0) {
+        LOG_WARN() << "Failed to detect speakers in: " << wav_file
+                   << ", skipping validation";
+        continue;
+      }
+      if (num_speakers > 1) {
+        LOG_WARN() << "Audio file contains " << num_speakers << " speakers: "
+                    << wav_file;
+        has_multiple_speakers = true;
+        multi_speaker_file = wav_file;
+      } else {
+        LOG_INFO() << "Single speaker confirmed in: " << wav_file;
+      }
+    }
+
+    if (has_multiple_speakers) {
+      LOG_ERROR() << "Sample must contain only one speaker";
+      LOG_ERROR() << "File with multiple speakers: " << multi_speaker_file;
+      LOG_ERROR() << "Use --force to bypass this check";
+      return "";
+    }
   }
 
   // 提取所有 embedding
@@ -416,6 +449,92 @@ std::string ZSpeakerIdentifier::AddSpeaker(
   LOG_INFO() << "Successfully added speaker: " << speaker_id << " (" << name << ")";
 
   return speaker_id;
+}
+
+int ZSpeakerIdentifier::DetectNumSpeakers(const std::string& wav_path) {
+  if (!initialized_) {
+    LOG_ERROR() << "ZSpeakerIdentifier not initialized";
+    return -1;
+  }
+
+  // Check if file exists
+  std::ifstream file(wav_path);
+  if (!file.good()) {
+    LOG_ERROR() << "Cannot open audio file: " << wav_path;
+    return -1;
+  }
+  file.close();
+
+  LOG_INFO() << "Starting speaker diarization for: " << wav_path;
+
+  // Configure speaker diarization
+  SherpaOnnxOfflineSpeakerDiarizationConfig config;
+  std::memset(&config, 0, sizeof(config));
+
+  // Try to find speaker segmentation model
+  std::string segmentation_model = GetDefaultModelPath("speaker-segmentation-models/") +
+      "sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx";
+
+  LOG_INFO() << "Segmentation model: " << segmentation_model;
+  LOG_INFO() << "Embedding model: " << config_.model;
+
+  config.segmentation.pyannote.model = segmentation_model.c_str();
+  config.segmentation.num_threads = config_.num_threads;
+  config.segmentation.debug = config_.debug ? 1 : 0;
+  config.segmentation.provider = config_.provider.c_str();
+  config.embedding.model = config_.model.c_str();
+  config.embedding.num_threads = config_.num_threads;
+  config.embedding.debug = config_.debug ? 1 : 0;
+  config.embedding.provider = config_.provider.c_str();
+  config.clustering.num_clusters = -1;  // Auto-detect number of speakers
+  config.clustering.threshold = 0.5;
+
+  // Create diarization object
+  LOG_INFO() << "Creating speaker diarization object...";
+  const SherpaOnnxOfflineSpeakerDiarization* diarization =
+      SherpaOnnxCreateOfflineSpeakerDiarization(&config);
+
+  if (!diarization) {
+    LOG_ERROR() << "Failed to create speaker diarization object";
+    LOG_ERROR() << "Possible reasons:";
+    LOG_ERROR() << "  1. Segmentation model not found: " << segmentation_model;
+    LOG_ERROR() << "  2. Embedding model not found: " << config_.model;
+    return -1;
+  }
+
+  LOG_INFO() << "Speaker diarization object created successfully";
+
+  // Read audio file
+  SherpaWaveWrapper wave(wav_path);
+  LOG_INFO() << "Audio file loaded: " << wave.GetNumSamples() << " samples, "
+              << wave.GetSampleRate() << " Hz";
+
+  // Process audio
+  LOG_INFO() << "Processing speaker diarization...";
+  const SherpaOnnxOfflineSpeakerDiarizationResult* result =
+      SherpaOnnxOfflineSpeakerDiarizationProcess(diarization,
+                                                    wave.GetSamples(),
+                                                    wave.GetNumSamples());
+
+  if (!result) {
+    LOG_ERROR() << "Failed to process speaker diarization";
+    SherpaOnnxDestroyOfflineSpeakerDiarization(
+        const_cast<const SherpaOnnxOfflineSpeakerDiarization*>(diarization));
+    return -1;
+  }
+
+  LOG_INFO() << "Speaker diarization completed successfully";
+
+  // Get number of speakers directly
+  int32_t num_speakers = SherpaOnnxOfflineSpeakerDiarizationResultGetNumSpeakers(result);
+
+  LOG_INFO() << "Detected " << num_speakers << " speaker(s) in " << wav_path;
+
+  // Cleanup - destroying the diarization object also frees the result
+  SherpaOnnxDestroyOfflineSpeakerDiarization(
+      const_cast<const SherpaOnnxOfflineSpeakerDiarization*>(diarization));
+
+  return static_cast<int>(num_speakers);
 }
 
 }  // namespace zasr

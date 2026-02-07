@@ -70,12 +70,14 @@ class VoicePrintManager {
       const std::vector<std::string>& audio_files);
 
   // 添加说话人声纹
+  // force: 如果为 true，跳过多说话人检测
   // Returns speaker_id if successful, empty string if failed
   std::string AddSpeaker(const std::string& name,
                         const std::vector<std::string>& audio_files,
                         const std::string& gender = "unknown",
                         const std::string& language = "unknown",
-                        const std::string& notes = "");
+                        const std::string& notes = "",
+                        bool force = false);
 
   // 添加说话人声纹（使用预先提取的 embedding）
   // Returns speaker_id if successful, empty string if failed

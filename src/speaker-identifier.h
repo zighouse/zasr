@@ -134,7 +134,9 @@ class ZSpeakerIdentifier {
   IdentificationResult IdentifyFromWav(const std::string& wav_path);
 
   // 添加说话人（运行时动态添加），返回 speaker_id，失败返回空字符串
-  std::string AddSpeaker(const std::string& name, const std::vector<std::string>& wav_files);
+  // force: 如果为 true，跳过多说话人检测；如果为 false，检测到多说话人时返回空字符串
+  std::string AddSpeaker(const std::string& name, const std::vector<std::string>& wav_files,
+                        bool force = false);
 
   // 获取当前已注册的说话人数量
   size_t GetRegisteredSpeakerCount() const {
@@ -153,6 +155,10 @@ class ZSpeakerIdentifier {
     return extractor_ ? SherpaOnnxSpeakerEmbeddingExtractorDim(
         const_cast<const SherpaOnnxSpeakerEmbeddingExtractor*>(extractor_.get())) : 0;
   }
+
+  // 检测音频文件中的说话人数量
+  // 返回说话人数量，失败返回 -1
+  int DetectNumSpeakers(const std::string& wav_path);
 
  private:
   // 从音频提取 embedding

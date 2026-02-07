@@ -163,9 +163,10 @@ std::string VoicePrintManager::AddSpeaker(
     const std::vector<std::string>& audio_files,
     const std::string& gender,
     const std::string& language,
-    const std::string& notes) {
+    const std::string& notes,
+    bool force) {
    // Add speaker using ZSpeakerIdentifier (now returns speaker_id directly)
-  std::string speaker_id = impl_->GetIdentifier().AddSpeaker(name, audio_files);
+  std::string speaker_id = impl_->GetIdentifier().AddSpeaker(name, audio_files, force);
   if (speaker_id.empty()) {
     LOG_ERROR() << "Failed to add speaker: " << name;
     return "";

@@ -86,6 +86,7 @@ void PrintUsage(const char* program_name) {
   std::cout << "  --language <语言>      语言：zh-CN/en-US/unknown(默认：unknown)\n";
   std::cout << "  --notes <Notes>         自定义Notes\n";
   std::cout << "  --threshold <阈值>     相似度阈值，0-1之间(默认：0.75)\n";
+  std::cout << "  --force                强制添加，跳过多说话人检测\n";
   std::cout << "  --verbose              详细输出\n";
 }
 
@@ -320,7 +321,9 @@ int main(int argc, char* argv[]) {
 
     std::string notes = FindArg(args, "--notes");
 
-    std::string speaker_id = manager.AddSpeaker(name, audio_files, gender, language, notes);
+    bool force = HasArg(args, "--force");
+
+    std::string speaker_id = manager.AddSpeaker(name, audio_files, gender, language, notes, force);
     if (speaker_id.empty()) {
       std::cerr << "错误：无法添加说话人" << std::endl;
       return 1;
