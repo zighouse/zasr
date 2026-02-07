@@ -21,6 +21,8 @@
 
 namespace zasr {
 
+namespace fs = std::filesystem;
+
 // ============================================================================
 // VoicePrintManager::Impl 实现
 // ============================================================================
@@ -266,6 +268,54 @@ std::unique_ptr<VoicePrintMetadata> VoicePrintManager::GetSpeakerInfo(
 
 size_t VoicePrintManager::GetSpeakerCount() const {
   return const_cast<VoicePrintManager*>(this)->impl_->GetDatabase().GetVoicePrintCount();
+}
+
+bool VoicePrintManager::ExportSpeakerSamples(
+    const std::string& speaker_id,
+    const std::string& output_dir) {
+
+  auto metadata = const_cast<VoicePrintManager*>(this)->impl_->GetDatabase().GetVoicePrint(speaker_id);
+  if (!metadata) {
+    LOG_ERROR() << "Speaker not found: " << speaker_id;
+    return false;
+  }
+
+  // Create output directory
+  try {
+    fs::create_directories(output_dir);
+  } catch (const std::exception& e) {
+    LOG_ERROR() << "Failed to create output directory: " << output_dir
+                << ", error: " << e.what();
+    return false;
+  }
+
+  // Export each audio sample
+  int exported_count = 0;
+  auto& db = const_cast<VoicePrintManager*>(this)->impl_->GetDatabase();
+
+  for (const auto& relative_path : metadata->audio_samples) {
+    // Get absolute path from database
+    std::string source_path = db.GetSampleAbsolutePath(relative_path);
+
+    // Extract original filename from relative path
+    // Expected format: "samples/speaker-1/sample-001-original.wav"
+    std::string filename = fs::path(relative_path).filename();
+    std::string dest_path = output_dir + "/" + filename;
+
+    try {
+      fs::copy_file(source_path, dest_path,
+                    fs::copy_options::overwrite_existing);
+      LOG_INFO() << "Exported: " << filename << " -> " << dest_path;
+      exported_count++;
+    } catch (const std::exception& e) {
+      LOG_ERROR() << "Failed to export " << filename
+                  << ": " << e.what();
+      return false;
+    }
+  }
+
+  LOG_INFO() << "Exported " << exported_count << " files to: " << output_dir;
+  return true;
 }
 
 // 辅助函数

@@ -116,6 +116,13 @@ class VoicePrintManager {
   // 获取说话人数量
   size_t GetSpeakerCount() const;
 
+  // 导出说话人音频样本到指定目录
+  // speaker_id: 要导出的说话人 ID
+  // output_dir: 导出目标目录
+  // Returns true if all files exported successfully
+  bool ExportSpeakerSamples(const std::string& speaker_id,
+                            const std::string& output_dir);
+
  private:
   class Impl;
   std::unique_ptr<Impl> impl_;

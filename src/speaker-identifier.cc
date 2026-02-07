@@ -387,7 +387,24 @@ std::string ZSpeakerIdentifier::AddSpeaker(
   metadata.embedding_dim = static_cast<int32_t>(avg_embedding.size());
   metadata.num_samples = static_cast<int32_t>(wav_files.size());
   metadata.embedding_file = "embeddings/" + speaker_id + ".bin";
-  metadata.audio_samples = wav_files;  // 保存文件路径
+
+  // Copy audio files to database and store relative paths
+  std::vector<std::string> audio_sample_paths;
+  audio_sample_paths.reserve(wav_files.size());
+
+  int sample_num = 1;
+  for (const auto& wav_file : wav_files) {
+    std::string relative_path;
+    if (database_->CopyAudioSample(wav_file, speaker_id, sample_num, relative_path)) {
+      audio_sample_paths.push_back(relative_path);
+      sample_num++;
+    } else {
+      LOG_WARN() << "Failed to copy audio file, skipping: " << wav_file;
+    }
+  }
+
+  metadata.audio_samples = audio_sample_paths;
+  metadata.num_samples = static_cast<int32_t>(audio_sample_paths.size());
 
   if (!database_->AddVoicePrint(metadata, avg_embedding)) {
     LOG_ERROR() << "Failed to save to database";

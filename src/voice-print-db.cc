@@ -391,6 +391,9 @@ bool VoicePrintDatabase::RemoveVoicePrint(const std::string& speaker_id) {
   std::string embedding_path = it->second.GetEmbeddingPath(db_path_);
   DeleteEmbedding(embedding_path);
 
+  // Delete audio samples
+  DeleteSpeakerSamples(speaker_id);
+
    // Remove from database
   voice_prints_.erase(it);
   updated_at_ = GetCurrentTimestamp();
@@ -565,6 +568,91 @@ std::string VoicePrintDatabase::GenerateUnknownSpeakerId() {
     id = "unknown-" + std::to_string(next_unknown_num_++);
   } while (unknown_speakers_.find(id) != unknown_speakers_.end());
   return id;
+}
+
+bool VoicePrintDatabase::CopyAudioSample(
+    const std::string& source_path,
+    const std::string& speaker_id,
+    int sample_num,
+    std::string& out_relative_path) {
+
+  // Validate source file exists
+  if (!fs::exists(source_path)) {
+    LOG_ERROR() << "Source audio file not found: " << source_path;
+    return false;
+  }
+
+  // Check if source is a regular file
+  if (!fs::is_regular_file(source_path)) {
+    LOG_ERROR() << "Source is not a regular file: " << source_path;
+    return false;
+  }
+
+  // Create speaker's samples directory: samples/speaker-001/
+  std::string speaker_dir = GetSamplesDir() + "/" + speaker_id;
+  try {
+    fs::create_directories(speaker_dir);
+  } catch (const std::exception& e) {
+    LOG_ERROR() << "Failed to create speaker directory: " << speaker_dir
+                << ", error: " << e.what();
+    return false;
+  }
+
+  // Generate destination filename with original name and sequence number
+  std::string original_name = fs::path(source_path).filename();
+
+  std::string dest_filename = "sample-" +
+      std::to_string(sample_num) + "-" + original_name;
+  std::string dest_path = speaker_dir + "/" + dest_filename;
+
+  // Copy file
+  try {
+    fs::copy_file(source_path, dest_path,
+                  fs::copy_options::overwrite_existing);
+
+    // Return relative path
+    out_relative_path = "samples/" + speaker_id + "/" + dest_filename;
+
+    LOG_INFO() << "Copied audio sample: " << source_path
+               << " -> " << dest_path;
+    return true;
+
+  } catch (const std::exception& e) {
+    LOG_ERROR() << "Failed to copy audio file: " << e.what();
+    return false;
+  }
+}
+
+bool VoicePrintDatabase::DeleteSpeakerSamples(const std::string& speaker_id) {
+  std::string speaker_dir = GetSamplesDir() + "/" + speaker_id;
+
+  try {
+    if (fs::exists(speaker_dir)) {
+      fs::remove_all(speaker_dir);
+      LOG_INFO() << "Deleted audio samples for speaker: " << speaker_id;
+    }
+    return true;
+  } catch (const std::exception& e) {
+    LOG_ERROR() << "Failed to delete samples: " << e.what();
+    return false;
+  }
+}
+
+std::string VoicePrintDatabase::GetSampleAbsolutePath(
+    const std::string& relative_path) const {
+  return db_path_ + "/" + relative_path;
+}
+
+int VoicePrintDatabase::GetNextSampleNum(const std::string& speaker_id) const {
+  // Find speaker metadata
+  auto it = voice_prints_.find(speaker_id);
+  if (it == voice_prints_.end()) {
+    return 1;  // First sample
+  }
+
+  // Count existing samples for this speaker
+  const auto& metadata = it->second;
+  return static_cast<int>(metadata.audio_samples.size()) + 1;
 }
 
 bool VoicePrintDatabase::Validate() const {

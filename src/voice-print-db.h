@@ -155,6 +155,27 @@ class VoicePrintDatabase {
   // Returns true if all referenced files exist
   bool Validate() const;
 
+  // Copy audio sample file to database directory
+  // source_path: absolute path to source audio file
+  // speaker_id: target speaker ID
+  // sample_num: sequence number for this sample (1-based)
+  // out_relative_path: output parameter for relative path (e.g., "samples/speaker-1/sample-001.wav")
+  // Returns true if successful
+  bool CopyAudioSample(const std::string& source_path,
+                       const std::string& speaker_id,
+                       int sample_num,
+                       std::string& out_relative_path);
+
+  // Delete all audio samples for a speaker
+  // speaker_id: target speaker ID
+  // Returns true if successful (even if no samples exist)
+  bool DeleteSpeakerSamples(const std::string& speaker_id);
+
+  // Get absolute path for a relative sample path
+  // relative_path: relative path from database root (e.g., "samples/speaker-1/sample-001.wav")
+  // Returns absolute path
+  std::string GetSampleAbsolutePath(const std::string& relative_path) const;
+
  private:
   // 创建数据库目录结构
   bool CreateDirectories();
@@ -171,6 +192,9 @@ class VoicePrintDatabase {
 
   // 删除 embedding 文件
   bool DeleteEmbedding(const std::string& filepath) const;
+
+  // 获取指定说话人的下一个样本编号
+  int GetNextSampleNum(const std::string& speaker_id) const;
 
  private:
   std::string db_path_;                          // 数据库根目录

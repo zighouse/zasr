@@ -72,7 +72,8 @@ void PrintUsage(const char* program_name) {
   std::cout << "    " << program_name << " list\n";
   std::cout << "    " << program_name << " info --speaker <说话人ID>\n";
   std::cout << "    " << program_name << " rename --speaker <说话人ID> --name <新Name>\n";
-  std::cout << "    " << program_name << " remove --speaker <说话人ID>\n\n";
+  std::cout << "    " << program_name << " remove --speaker <说话人ID>\n";
+  std::cout << "    " << program_name << " export --speaker <说话人ID> --output <目录>\n\n";
   std::cout << "  声纹识别:\n";
   std::cout << "    " << program_name << " identify --audio <音频文件>\n\n";
   std::cout << "  声纹验证:\n";
@@ -166,6 +167,32 @@ int ShowSpeakerInfo(VoicePrintManager& manager, const std::string& speaker_id) {
   }
 
   std::cout << std::string(50, '=') << "\n";
+
+  return 0;
+}
+
+// Export speaker audio samples to directory
+int ExportSpeakerSamples(VoicePrintManager& manager,
+                         const std::string& speaker_id,
+                         const std::string& output_dir) {
+  auto metadata = manager.GetSpeakerInfo(speaker_id);
+  if (!metadata) {
+    std::cerr << "错误：Speaker not found: " << speaker_id << std::endl;
+    return 1;
+  }
+
+  std::cout << "Exporting audio samples for speaker: " << metadata->name << "\n";
+  std::cout << "Speaker ID: " << speaker_id << "\n";
+  std::cout << "Output directory: " << output_dir << "\n";
+  std::cout << "Number of samples: " << metadata->audio_samples.size() << "\n";
+
+  if (!manager.ExportSpeakerSamples(speaker_id, output_dir)) {
+    std::cerr << "错误：Failed to export audio samples" << std::endl;
+    return 1;
+  }
+
+  std::cout << "\nSuccessfully exported " << metadata->audio_samples.size()
+            << " file(s) to: " << output_dir << "\n";
 
   return 0;
 }
@@ -267,12 +294,16 @@ int main(int argc, char* argv[]) {
     // 收集音频文件
     std::vector<std::string> audio_files;
     for (size_t i = 2; i < args.size(); ++i) {
-      if (strcmp(args[i], "--audio") == 0 && i + 1 < args.size()) {
-        // 检查下一参数是否是选项(以 -- 开头)
-        if (strncmp(args[i + 1], "--", 2) != 0) {
-          audio_files.push_back(args[i + 1]);
-          ++i; // 跳过文件名
+      if (strcmp(args[i], "--audio") == 0) {
+        // 收集 --audio 后面的所有非选项参数
+        for (size_t j = i + 1; j < args.size(); ++j) {
+          // 如果遇到以 -- 开头的选项，停止收集
+          if (strncmp(args[j], "--", 2) == 0) {
+            break;
+          }
+          audio_files.push_back(args[j]);
         }
+        break;  // 已经找到 --audio，可以退出循环
       }
     }
 
@@ -384,6 +415,22 @@ int main(int argc, char* argv[]) {
     std::cout << "  Result:      " << (verified ? "PASS" : "✗ FAILED") << std::endl;
 
     return verified ? 0 : 1;
+  }
+  else if (command == "export") {
+    std::string speaker_id = FindArg(args, "--speaker");
+    std::string output_dir = FindArg(args, "--output");
+
+    if (speaker_id.empty()) {
+      std::cerr << "错误：Missing --speaker parameter" << std::endl;
+      return 1;
+    }
+
+    if (output_dir.empty()) {
+      std::cerr << "错误：Missing --output parameter" << std::endl;
+      return 1;
+    }
+
+    return ExportSpeakerSamples(manager, speaker_id, output_dir);
   }
   else {
     std::cerr << "错误：unknown命令 '" << command << "'" << std::endl;
