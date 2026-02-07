@@ -88,6 +88,14 @@ add_executable(zasr-server
   src/yaml-config.cc
 )
 
+# Add voice print collection tool
+add_executable(collect-voiceprint
+  src/collect-voiceprint.cc
+  src/voice-print-manager.cc
+  src/voice-print-db.cc
+  src/speaker-identifier.cc
+)
+
 # Include directories
 target_include_directories(zasr-server PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -111,8 +119,46 @@ if(YAML_CPP_INCLUDE_DIR)
     target_include_directories(zasr-server PRIVATE ${YAML_CPP_INCLUDE_DIR})
 endif()
 
+# Include directories for collect-voiceprint
+target_include_directories(collect-voiceprint PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${SHERPA_ONNX_INCLUDE_DIR}
+  ${NLOHMANN_JSON_INCLUDE_DIR}
+)
+
+if(YAML_CPP_INCLUDE_DIR)
+    target_include_directories(collect-voiceprint PRIVATE ${YAML_CPP_INCLUDE_DIR})
+endif()
+
 # Link libraries - use sherpa-onnx all required libraries with link group
 target_link_libraries(zasr-server
+  "-Wl,--start-group"
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-core.a
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-cxx-api.a
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-c-api.a
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-fst.a
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-fstfar.a
+  ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-kaldifst-core.a
+  ${SHERPA_ONNX_LIB_DIR}/libkaldi-decoder-core.a
+  ${SHERPA_ONNX_LIB_DIR}/libkaldi-native-fbank-core.a
+  ${SHERPA_ONNX_LIB_DIR}/libpiper_phonemize.a
+  ${SHERPA_ONNX_LIB_DIR}/libespeak-ng.a
+  ${SHERPA_ONNX_LIB_DIR}/libucd.a
+  ${SHERPA_ONNX_LIB_DIR}/libkissfft-float.a
+  ${SHERPA_ONNX_LIB_DIR}/libssentencepiece_core.a
+  ${SHERPA_ONNX_LIB_DIR}/libcargs.a
+  ${ONNX_RUNTIME_LIB_DIR}/libonnxruntime.a
+  "-Wl,--end-group"
+  yaml-cpp
+  Threads::Threads
+  ${CMAKE_DL_LIBS}
+  stdc++
+  m
+  rt
+)
+
+# Link libraries for collect-voiceprint
+target_link_libraries(collect-voiceprint
   "-Wl,--start-group"
   ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-core.a
   ${SHERPA_ONNX_LIB_DIR}/libsherpa-onnx-cxx-api.a
@@ -145,4 +191,4 @@ target_compile_definitions(zasr-server PRIVATE
 )
 
 # Install target
-install(TARGETS zasr-server DESTINATION bin)
+install(TARGETS zasr-server collect-voiceprint DESTINATION bin)
