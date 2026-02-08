@@ -306,6 +306,35 @@ void ZAsrConnection::HandleStartTranscription(const json& header, const json& pa
         }
       }
 
+      // Initialize speaker identification (if enabled)
+      if (config.enable_speaker_identification) {
+        LOG_INFO() << "Initializing speaker identification...";
+        LOG_INFO() << "Speaker model: " << config.speaker_model;
+        LOG_INFO() << "Voice print DB: " << config.voice_print_db;
+
+        ZSpeakerIdentifier::Config sid_config;
+        sid_config.model = config.speaker_model;
+        sid_config.num_threads = config.num_threads;
+        sid_config.debug = false;
+        sid_config.provider = "cpu";
+        sid_config.voice_print_db = config.voice_print_db;
+        sid_config.similarity_threshold = config.speaker_similarity_threshold;
+        sid_config.enable_auto_track = config.auto_track_new_speakers;
+
+        speaker_identifier_ = std::make_unique<ZSpeakerIdentifier>(sid_config);
+
+        if (!speaker_identifier_->Initialize()) {
+          LOG_WARN() << "Failed to initialize SpeakerIdentifier, continuing without speaker identification";
+          speaker_identifier_.reset();
+          enable_speaker_identification_ = false;
+        } else {
+          enable_speaker_identification_ = true;
+          LOG_INFO() << "Speaker identification initialized successfully";
+        }
+      } else {
+        enable_speaker_identification_ = false;
+      }
+
       LOG_INFO() << "ASR initialized for connection with config: "
                 << client_config_.ToString()
                 << ", recognizer_type: "
@@ -626,6 +655,34 @@ void ZAsrConnection::ProcessOfflineMode() {
 
       LOG_DEBUG() << "ProcessOfflineMode: Final result: " << current_sentence_.result;
 
+      // Perform speaker identification if enabled
+      if (enable_speaker_identification_ && speaker_identifier_ && !audio_buffer_.empty()) {
+        LOG_DEBUG() << "ProcessOfflineMode: Performing speaker identification";
+
+        // Convert audio buffer to float for speaker identification
+        std::vector<float> audio_segment = Int16ToFloat(audio_buffer_);
+
+        // Identify speaker
+        auto identification_result = speaker_identifier_->ProcessSegment(audio_segment);
+
+        if (!identification_result.speaker_id.empty()) {
+          current_speaker_id_ = identification_result.speaker_id;
+          current_speaker_name_ = identification_result.speaker_name;
+
+          LOG_INFO() << "ProcessOfflineMode: Identified speaker: "
+                    << current_speaker_id_ << " (" << current_speaker_name_ << ")";
+
+          if (identification_result.is_new_speaker) {
+            LOG_INFO() << "ProcessOfflineMode: New speaker tracked automatically";
+          }
+        } else {
+          // No speaker identified, clear previous speaker info
+          current_speaker_id_.clear();
+          current_speaker_name_.clear();
+          LOG_DEBUG() << "ProcessOfflineMode: No speaker identified";
+        }
+      }
+
       SendSentenceEnd(current_sentence_.index,
                      total_ms_,
                      current_sentence_.begin_time,
@@ -807,6 +864,12 @@ void ZAsrConnection::SendTranscriptionResultChanged(int index, int time_ms,
   payload["time"] = time_ms;
   payload["text"] = result;
 
+  // Add speaker information if available
+  if (enable_speaker_identification_ && !current_speaker_id_.empty()) {
+    payload["speaker_id"] = current_speaker_id_;
+    payload["speaker"] = current_speaker_name_;
+  }
+
   SendProtocolMessage("Result", payload);
 }
 
@@ -818,6 +881,12 @@ void ZAsrConnection::SendSentenceEnd(int index, int time_ms, int begin_time,
   payload["begin"] = begin_time;
   // 对最终结果添加标点符号
   payload["text"] = AddPunctuation(result);
+
+  // Add speaker information if available
+  if (enable_speaker_identification_ && !current_speaker_id_.empty()) {
+    payload["speaker_id"] = current_speaker_id_;
+    payload["speaker"] = current_speaker_name_;
+  }
 
   SendProtocolMessage("SentenceEnd", payload);
 }

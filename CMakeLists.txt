@@ -86,6 +86,9 @@ add_executable(zasr-server
   src/zasr-connection.cc
   src/zasr-config.cc
   src/yaml-config.cc
+  src/speaker-identifier.cc
+  src/voice-print-db.cc
+  src/voice-print-manager.cc
 )
 
 # Add voice print collection tool

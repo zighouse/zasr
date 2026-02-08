@@ -70,7 +70,14 @@ struct ZAsrConfig {
   // Punctuation configuration
   bool enable_punctuation = false;
   std::string punctuation_model;
-  
+
+  // Speaker identification configuration
+  bool enable_speaker_identification = false;
+  std::string speaker_model;
+  std::string voice_print_db;
+  float speaker_similarity_threshold = 0.75f;
+  bool auto_track_new_speakers = true;
+
   // Processing configuration
   float vad_window_size_ms = 30;  // VAD窗口大小（毫秒）
   float update_interval_ms = 200; // 更新间隔（毫秒）

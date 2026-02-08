@@ -99,6 +99,13 @@ bool ZAsrConfig::FromCommandLine(int argc, char* argv[]) {
   parseBool("--enable-punctuation", enable_punctuation);
   parseString("--punctuation-model", punctuation_model);
 
+  // Speaker identification configuration
+  parseBool("--enable-speaker-identification", enable_speaker_identification);
+  parseString("--speaker-model", speaker_model);
+  parseString("--voice-print-db", voice_print_db);
+  parseFloat("--speaker-similarity-threshold", speaker_similarity_threshold);
+  parseBool("--auto-track-new-speakers", auto_track_new_speakers);
+
   // ASR configuration
   // Parse recognizer type first
   {
@@ -578,6 +585,22 @@ bool ZAsrConfig::Validate() const {
     return false;
   }
 
+  // Speaker identification validation
+  if (enable_speaker_identification) {
+    if (speaker_model.empty()) {
+      std::cerr << "Error: --speaker-model is required when --enable-speaker-identification is true\n";
+      return false;
+    }
+    if (voice_print_db.empty()) {
+      std::cerr << "Error: --voice-print-db is required when --enable-speaker-identification is true\n";
+      return false;
+    }
+    if (speaker_similarity_threshold <= 0 || speaker_similarity_threshold > 1) {
+      std::cerr << "Error: speaker-similarity-threshold must be in range (0, 1]\n";
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -622,6 +645,15 @@ std::string ZAsrConfig::ToString() const {
   os << "    Enabled: " << (enable_punctuation ? "true" : "false") << "\n";
   if (enable_punctuation) {
     os << "    Model: " << punctuation_model << "\n";
+  }
+
+  os << "  Speaker Identification:\n";
+  os << "    Enabled: " << (enable_speaker_identification ? "true" : "false") << "\n";
+  if (enable_speaker_identification) {
+    os << "    Model: " << speaker_model << "\n";
+    os << "    Voice print DB: " << voice_print_db << "\n";
+    os << "    Similarity threshold: " << speaker_similarity_threshold << "\n";
+    os << "    Auto-track new speakers: " << (auto_track_new_speakers ? "true" : "false") << "\n";
   }
 
   os << "  Timeouts:\n";

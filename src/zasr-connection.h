@@ -22,6 +22,7 @@
 #include "websocketpp/server.hpp"
 #include "sherpa-onnx/c-api/cxx-api.h"
 #include "json.hpp"
+#include "speaker-identifier.h"
 
 namespace zasr {
 
@@ -228,7 +229,13 @@ class ZAsrConnection : public std::enable_shared_from_this<ZAsrConnection> {
 
   // 标点符号相关
   std::unique_ptr<sherpa_onnx::cxx::OfflinePunctuation> punctuation_;
-  
+
+  // 说话人识别相关
+  std::unique_ptr<ZSpeakerIdentifier> speaker_identifier_;
+  bool enable_speaker_identification_ = false;
+  std::string current_speaker_id_;
+  std::string current_speaker_name_;
+
   // 句子状态管理
   SentenceState current_sentence_;
   int sentence_counter_ = 0;      // 句子计数器
