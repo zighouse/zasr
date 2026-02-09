@@ -45,6 +45,11 @@ static bool WriteWavFile(const std::string& filepath,
                          const std::vector<float>& samples,
                          int sample_rate);
 
+// Helper function to fix WAV file header
+// Some recording tools write incorrect size fields (0x7FFFFFFF)
+// This function fixes them based on actual file size
+static bool FixWavHeader(const std::string& filepath);
+
 // 辅助函数：计算字符串的显示宽度（中文算2，英文算1）
 static int GetDisplayWidth(const std::string& str) {
   int width = 0;
@@ -225,6 +230,92 @@ int ExportSpeakerSamples(VoicePrintManager& manager,
             << " file(s) to: " << output_dir << "\n";
 
   return 0;
+}
+
+// Fix WAV file header with correct size fields
+static bool FixWavHeader(const std::string& filepath) {
+  // Read file
+  std::vector<uint8_t> data;
+  FILE* fp = fopen(filepath.c_str(), "rb");
+  if (!fp) {
+    std::cerr << "Error: Failed to open file: " << filepath << std::endl;
+    return false;
+  }
+
+  // Get file size
+  fseek(fp, 0, SEEK_END);
+  long file_size = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+
+  if (file_size < 44) {
+    std::cerr << "Error: File too small to be a valid WAV: " << filepath << std::endl;
+    fclose(fp);
+    return false;
+  }
+
+  data.resize(file_size);
+  size_t read_size = fread(data.data(), 1, file_size, fp);
+  fclose(fp);
+
+  if (read_size != static_cast<size_t>(file_size)) {
+    std::cerr << "Error: Failed to read file: " << filepath << std::endl;
+    return false;
+  }
+
+  // Check RIFF header
+  if (data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F') {
+    std::cerr << "Error: Not a RIFF file: " << filepath << std::endl;
+    return false;
+  }
+
+  // Check WAVE format
+  if (data[8] != 'W' || data[9] != 'A' || data[10] != 'V' || data[11] != 'E') {
+    std::cerr << "Error: Not a WAVE file: " << filepath << std::endl;
+    return false;
+  }
+
+  bool fixed = false;
+
+  // Fix RIFF chunk size (at offset 4)
+  uint32_t riff_size = *reinterpret_cast<uint32_t*>(&data[4]);
+  uint32_t actual_riff_size = file_size - 8;
+  if (riff_size != actual_riff_size) {
+    *reinterpret_cast<uint32_t*>(&data[4]) = actual_riff_size;
+    fixed = true;
+  }
+
+  // Find and fix data chunk size
+  size_t data_pos = 12;  // Start after RIFF header
+  while (data_pos < data.size() - 8) {
+    if (data[data_pos] == 'd' && data[data_pos + 1] == 'a' &&
+        data[data_pos + 2] == 't' && data[data_pos + 3] == 'a') {
+      // Found data chunk
+      uint32_t data_size = *reinterpret_cast<uint32_t*>(&data[data_pos + 4]);
+      uint32_t actual_data_size = file_size - data_pos - 8;
+      if (data_size != actual_data_size) {
+        *reinterpret_cast<uint32_t*>(&data[data_pos + 4]) = actual_data_size;
+        fixed = true;
+      }
+      break;
+    }
+    // Skip to next chunk
+    uint32_t chunk_size = *reinterpret_cast<uint32_t*>(&data[data_pos + 4]);
+    data_pos += 8 + chunk_size;
+  }
+
+  if (fixed) {
+    // Write fixed file
+    fp = fopen(filepath.c_str(), "wb");
+    if (!fp) {
+      std::cerr << "Error: Failed to open file for writing: " << filepath << std::endl;
+      return false;
+    }
+    fwrite(data.data(), 1, data.size(), fp);
+    fclose(fp);
+    std::cout << "Fixed WAV header: " << filepath << std::endl;
+  }
+
+  return true;
 }
 
 // Write WAV file from float samples
@@ -461,6 +552,11 @@ static int RecordFromMicrophone(VoicePrintManager& manager,
       std::cerr << "Warning: Failed to copy to " << output_file
                 << ": " << e.what() << std::endl;
     }
+  }
+
+  // Fix WAV header (arecord may write incorrect size fields)
+  if (!FixWavHeader(temp_file)) {
+    std::cerr << "Warning: Failed to fix WAV header, continuing anyway..." << std::endl;
   }
 
   // Process audio with VAD to extract speech segments
@@ -744,6 +840,9 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
+    // Fix WAV header if needed (arecord may write incorrect size fields)
+    FixWavHeader(audio_file);
+
     float confidence = 0.0f;
     std::string speaker_id = manager.IdentifySpeaker(audio_file, &confidence);
 
@@ -775,6 +874,9 @@ int main(int argc, char* argv[]) {
     if (!threshold_str.empty()) {
       threshold = std::stof(threshold_str);
     }
+
+    // Fix WAV header if needed (arecord may write incorrect size fields)
+    FixWavHeader(audio_file);
 
     bool verified = manager.VerifySpeaker(speaker_id, audio_file, threshold);
 
