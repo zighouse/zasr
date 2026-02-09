@@ -17,6 +17,7 @@
 #include <chrono>
 #include <iomanip>
 #include <set>
+#include <map>
 
 namespace zasr {
 
@@ -203,33 +204,73 @@ ZSpeakerIdentifier::IdentificationResult ZSpeakerIdentifier::MatchSpeaker(
     return result;
   }
 
-  // 使用 C API 的 Search 函数
-  const char* name_ptr = SherpaOnnxSpeakerEmbeddingManagerSearch(
-      manager_.get(), embedding.data(), config_.similarity_threshold);
+  // 使用 GetBestMatches API 获取最佳匹配及其分数
+  // 获取前 3 个最佳匹配
+  const int32_t num_matches = 3;
+  const SherpaOnnxSpeakerEmbeddingManagerBestMatchesResult* matches_result =
+      SherpaOnnxSpeakerEmbeddingManagerGetBestMatches(
+          manager_.get(), embedding.data(), 0.0f, num_matches);
 
-  if (name_ptr) {
-    // 找到匹配的说话人
-    result.speaker_name = name_ptr;
-    result.confidence = config_.similarity_threshold;  // TODO: 获取实际置信度
+  if (!matches_result || matches_result->count == 0) {
+    LOG_INFO() << "No speakers found in database";
+    return result;
+  }
 
-    // 释放字符串
-    SherpaOnnxSpeakerEmbeddingManagerFreeSearch(name_ptr);
+  // 预加载所有说话人信息用于 ID 查找
+  auto all_speakers = database_->GetAllVoicePrints();
+  std::map<std::string, std::string> name_to_id_map;
+  for (const auto& speaker : all_speakers) {
+    name_to_id_map[speaker.name] = speaker.id;
+  }
 
-    // 查找 speaker_id
-    auto all_speakers = database_->GetAllVoicePrints();
-    for (const auto& speaker : all_speakers) {
-      if (speaker.name == result.speaker_name) {
-        result.speaker_id = speaker.id;
-        break;
-      }
+  // 提取所有匹配结果
+  result.top_matches.reserve(matches_result->count);
+  for (int32_t i = 0; i < matches_result->count; ++i) {
+    const SherpaOnnxSpeakerEmbeddingManagerSpeakerMatch& match = matches_result->matches[i];
+
+    SpeakerMatch sm;
+    sm.name = match.name;
+    sm.score = match.score;
+
+    auto it = name_to_id_map.find(match.name);
+    if (it != name_to_id_map.end()) {
+      sm.id = it->second;
     }
 
-    LOG_INFO() << "Identified speaker: " << result.speaker_id << " (" << result.speaker_name << ")";
+    result.top_matches.push_back(sm);
 
-  } else {
-    // No matching speaker found
-    LOG_INFO() << "No matching speaker found (threshold: " << std::to_string(config_.similarity_threshold) << ")";
+    LOG_DEBUG() << "Match " << (i + 1) << ": " << match.name
+                << " (score: " << match.score << ", id: " << sm.id << ")";
   }
+
+  // 检查最佳匹配是否达到阈值
+  const SherpaOnnxSpeakerEmbeddingManagerSpeakerMatch& best_match = matches_result->matches[0];
+
+  if (best_match.score >= config_.similarity_threshold) {
+    // 找到匹配的说话人
+    result.speaker_name = best_match.name;
+    result.confidence = best_match.score;  // 使用实际的相似度分数
+
+    auto it = name_to_id_map.find(best_match.name);
+    if (it != name_to_id_map.end()) {
+      result.speaker_id = it->second;
+    }
+
+    LOG_INFO() << "Identified speaker: " << result.speaker_id
+              << " (" << result.speaker_name << ")"
+              << " confidence: " << std::fixed << std::setprecision(3)
+              << result.confidence;
+  } else {
+    // 最佳匹配也未达到阈值
+    LOG_INFO() << "No matching speaker found. Best match: "
+              << best_match.name
+              << " (score: " << std::fixed << std::setprecision(3)
+              << best_match.score
+              << ", threshold: " << config_.similarity_threshold << ")";
+  }
+
+  // 释放匹配结果
+  SherpaOnnxSpeakerEmbeddingManagerFreeBestMatches(matches_result);
 
   return result;
 }

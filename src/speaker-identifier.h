@@ -107,11 +107,20 @@ class ZSpeakerIdentifier {
     bool enable_auto_track = true;        // 是否自动跟踪新说话人
   };
 
+  struct SpeakerMatch {
+    std::string name;      // 说话人姓名
+    std::string id;        // 说话人 ID
+    float score = 0.0f;    // 相似度分数 [0, 1]
+  };
+
   struct IdentificationResult {
     std::string speaker_id;        // 说话人 ID
     std::string speaker_name;      // 说话人姓名
     float confidence = 0.0f;       // 置信度 [0, 1]
     bool is_new_speaker = false;   // 是否是新检测到的说话人
+
+    // Top N 最佳匹配（按相似度排序）
+    std::vector<SpeakerMatch> top_matches;
   };
 
   // 构造函数
