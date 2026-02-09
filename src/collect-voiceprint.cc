@@ -13,6 +13,8 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <filesystem>
+#include <unistd.h>
 #include <sys/stat.h>
 
 // 包含我们的头文件(speaker-identifier.h 已经包含了 sherpa-onnx C API)
@@ -21,6 +23,17 @@
 #include "zasr-config.h"
 
 using namespace zasr;
+
+// Function declaration for RecordFromMicrophone
+static int RecordFromMicrophone(VoicePrintManager& manager,
+                                 const std::string& name,
+                                 int duration,
+                                 const std::string& output_file,
+                                 int device_index,
+                                 const std::string& gender,
+                                 const std::string& language,
+                                 const std::string& notes,
+                                 bool force);
 
 // 辅助函数：计算字符串的显示宽度（中文算2，英文算1）
 static int GetDisplayWidth(const std::string& str) {
@@ -67,7 +80,8 @@ void PrintUsage(const char* program_name) {
   std::cout << "用法:\n";
   std::cout << "  声纹采集:\n";
   std::cout << "    " << program_name << " add --name <Name> --audio <音频文件> [选项]\n";
-  std::cout << "    " << program_name << " add --name <Name> --audio <文件1> <文件2> ... [选项]\n\n";
+  std::cout << "    " << program_name << " add --name <Name> --audio <文件1> <文件2> ... [选项]\n";
+  std::cout << "    " << program_name << " record --name <Name> [选项]\n\n";
   std::cout << "  声纹管理:\n";
   std::cout << "    " << program_name << " list\n";
   std::cout << "    " << program_name << " info --speaker <说话人ID>\n";
@@ -88,6 +102,11 @@ void PrintUsage(const char* program_name) {
   std::cout << "  --threshold <阈值>     相似度阈值，0-1之间(默认：0.75)\n";
   std::cout << "  --force                强制添加，跳过多说话人检测\n";
   std::cout << "  --verbose              详细输出\n";
+  std::cout << "\n";
+  std::cout << "record 命令选项:\n";
+  std::cout << "  --duration <秒>       录音时长，默认 5 秒\n";
+  std::cout << "  --output <文件>        输出 WAV 文件路径（可选，用于保存录音）\n";
+  std::cout << "  --device <设备>       音频设备索引（默认：0）\n";
 }
 
 // 解析命令行参数
@@ -198,6 +217,103 @@ int ExportSpeakerSamples(VoicePrintManager& manager,
   return 0;
 }
 
+// Record audio from microphone and add to voice print database
+static int RecordFromMicrophone(VoicePrintManager& manager,
+                                 const std::string& name,
+                                 int duration,
+                                 const std::string& output_file,
+                                 int device_index,
+                                 const std::string& gender,
+                                 const std::string& language,
+                                 const std::string& notes,
+                                 bool force) {
+  // Create temporary file for recording
+  char temp_template[] = "/tmp/zasr-recording-XXXXXX.wav";
+  int temp_fd = mkstemps(temp_template, 4);
+  if (temp_fd == -1) {
+    std::cerr << "Error: Failed to create temporary file" << std::endl;
+    return 1;
+  }
+  close(temp_fd);
+
+  std::string temp_file(temp_template);
+
+  // Build arecord command
+  std::ostringstream cmd;
+  cmd << "arecord"
+      << " -D plughw:" << device_index
+      << " -f S16_LE"
+      << " -r 16000"
+      << " -c 1"
+      << " -d " << duration
+      << " " << temp_file
+      << " 2>&1";
+
+  std::cout << "Recording audio from microphone..." << std::endl;
+  std::cout << "  Device: plughw:" << device_index << std::endl;
+  std::cout << "  Duration: " << duration << " seconds" << std::endl;
+  std::cout << "  Sample rate: 16000 Hz, 16-bit, mono" << std::endl;
+  std::cout << "\nPlease speak now..." << std::endl;
+  std::cout.flush();
+
+  // Execute arecord command
+  int ret = system(cmd.str().c_str());
+  if (ret != 0) {
+    std::cerr << "\nError: Recording failed. Please check:" << std::endl;
+    std::cerr << "  1. Microphone is connected" << std::endl;
+    std::cerr << "  2. Device index " << device_index << " is valid" << std::endl;
+    std::cerr << "  3. arecord is installed (run: sudo apt install alsa-utils)" << std::endl;
+    std::cerr << "  4. You have permission to access audio devices" << std::endl;
+    std::cerr << "\nTo list available devices, run: arecord -l" << std::endl;
+
+    // Clean up temp file
+    std::filesystem::remove(temp_file);
+    return 1;
+  }
+
+  std::cout << "\nRecording completed." << std::endl;
+
+  // Copy to output file if specified
+  if (!output_file.empty()) {
+    try {
+      std::filesystem::create_directories(
+          std::filesystem::path(output_file).parent_path());
+      std::filesystem::copy_file(temp_file, output_file,
+                                 std::filesystem::copy_options::overwrite_existing);
+      std::cout << "Recording saved to: " << output_file << std::endl;
+    } catch (const std::exception& e) {
+      std::cerr << "Warning: Failed to copy to " << output_file
+                << ": " << e.what() << std::endl;
+    }
+  }
+
+  // Add to voice print database
+  std::cout << "\nExtracting voice print and adding to database..." << std::endl;
+
+  std::vector<std::string> audio_files = {temp_file};
+  std::string speaker_id = manager.AddSpeaker(name, audio_files,
+                                              gender, language, notes, force);
+
+  // Clean up temp file
+  std::filesystem::remove(temp_file);
+
+  if (speaker_id.empty()) {
+    std::cerr << "\nError: Failed to add speaker to database" << std::endl;
+    std::cerr << "Possible reasons:" << std::endl;
+    std::cerr << "  1. Recording too short (need at least 3 seconds)" << std::endl;
+    std::cerr << "  2. Audio quality too poor" << std::endl;
+    std::cerr << "  3. Multiple speakers detected (use --force to bypass)" << std::endl;
+    return 1;
+  }
+
+  std::cout << "\nSUCCESS: Speaker added to database" << std::endl;
+  std::cout << "  Speaker ID: " << speaker_id << std::endl;
+  std::cout << "  Name: " << name << std::endl;
+  std::cout << "  Samples: 1 file (recorded from microphone)" << std::endl;
+
+  return 0;
+}
+
 int main(int argc, char* argv[]) {
   if (argc < 2) {
     PrintUsage(argv[0]);
@@ -284,6 +400,39 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     return ShowSpeakerInfo(manager, speaker_id);
+  }
+  else if (command == "record") {
+    std::string name = FindArg(args, "--name");
+    if (name.empty()) {
+      std::cerr << "Error: Missing --name parameter" << std::endl;
+      return 1;
+    }
+
+    std::string duration_str = FindArg(args, "--duration");
+    int duration = 5;  // 默认 5 秒
+    if (!duration_str.empty()) {
+      duration = std::stoi(duration_str);
+    }
+
+    std::string output_file = FindArg(args, "--output");
+    std::string device_str = FindArg(args, "--device");
+    int device_index = 0;
+    if (!device_str.empty()) {
+      device_index = std::stoi(device_str);
+    }
+
+    std::string gender = FindArg(args, "--gender");
+    if (gender.empty()) gender = "unknown";
+
+    std::string language = FindArg(args, "--language");
+    if (language.empty()) language = "unknown";
+
+    std::string notes = FindArg(args, "--notes");
+
+    bool force = HasArg(args, "--force");
+
+    return RecordFromMicrophone(manager, name, duration, output_file, device_index,
+                                gender, language, notes, force);
   }
   else if (command == "add") {
     std::string name = FindArg(args, "--name");
