@@ -246,6 +246,8 @@ async def receive_messages(ws, task_id):
                         result = payload.get("text", "")
                         begin_time = payload.get("begin", 0)
                         end_time = payload.get("time", 0)
+                        speaker = payload.get("speaker", "")
+                        speaker_id = payload.get("speaker_id", "")
 
                         # 句子结束时，换行显示最终结果
                         sys.stdout.write("\r")
@@ -253,7 +255,12 @@ async def receive_messages(ws, task_id):
 
                         duration_ms = end_time - begin_time
                         time_str = f"{format_time_hms(begin_time)} - {format_duration(duration_ms)}"
-                        print(f"✓ {index}. {time_str} | {result}")
+
+                        # Format with speaker info if available
+                        if speaker:
+                            print(f"✓ {index}. {time_str} | [{speaker}] {result}")
+                        else:
+                            print(f"✓ {index}. {time_str} | {result}")
 
                         current_sentence = None
                         # 句子结束后，恢复蛇形动画
