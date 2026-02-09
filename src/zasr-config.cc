@@ -225,6 +225,13 @@ bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
   enable_punctuation = config.GetBool("punctuation.enabled", enable_punctuation);
   punctuation_model = config.GetString("punctuation.model", punctuation_model);
 
+  // Speaker identification
+  enable_speaker_identification = config.GetBool("speaker_identification.enabled", enable_speaker_identification);
+  speaker_model = config.GetString("speaker_identification.model", speaker_model);
+  voice_print_db = config.GetString("speaker_identification.voice_print_db", voice_print_db);
+  speaker_similarity_threshold = config.GetFloat("speaker_identification.similarity_threshold", speaker_similarity_threshold);
+  auto_track_new_speakers = config.GetBool("speaker_identification.auto_track_new_speakers", auto_track_new_speakers);
+
   // Processing
   vad_window_size_ms = config.GetFloat("processing.vad_window_size_ms", vad_window_size_ms);
   update_interval_ms = config.GetFloat("processing.update_interval_ms", update_interval_ms);
@@ -461,12 +468,43 @@ bool ZAsrConfig::FromYamlFile(const std::string& filepath) {
     }
   }
 
+  // Speaker identification model path
+  if (enable_speaker_identification && !speaker_model.empty()) {
+    if (speaker_model[0] == '/') {
+      struct stat buffer;
+      if (stat(speaker_model.c_str(), &buffer) != 0) {
+        std::cerr << "Speaker model not found at: " << speaker_model << ", searching..." << std::endl;
+        size_t pos = speaker_model.find_last_of('/');
+        if (pos != std::string::npos) {
+          std::string filename = speaker_model.substr(pos + 1);
+          auto model_paths = YamlConfig::GetDefaultModelPaths();
+          std::string resolved = YamlConfig::FindFileInPaths(filename, model_paths);
+          if (!resolved.empty()) {
+            speaker_model = resolved;
+            std::cerr << "Speaker model found at: " << speaker_model << std::endl;
+          } else {
+            std::cerr << "Speaker model NOT found!" << std::endl;
+          }
+        }
+      }
+    } else {
+      auto model_paths = YamlConfig::GetDefaultModelPaths();
+      std::string resolved = YamlConfig::FindFileInPaths(speaker_model, model_paths);
+      if (!resolved.empty()) {
+        speaker_model = resolved;
+      }
+    }
+  }
+
   // Set default paths if not specified
   if (silero_vad_model.empty() && recognizer_type == RecognizerType::kSenseVoice) {
     silero_vad_model = GetDefaultModelPath("silero_vad.int8.onnx");
   }
   if (enable_punctuation && punctuation_model.empty()) {
     punctuation_model = GetDefaultModelPath("sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx");
+  }
+  if (enable_speaker_identification && speaker_model.empty()) {
+    speaker_model = GetDefaultModelPath("speaker-recognition-models/nemo_en_titanet_small.onnx");
   }
 
   return true;

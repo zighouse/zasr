@@ -1,0 +1,55 @@
+# ZAsR Test Configuration with Speaker Identification
+
+server:
+  host: "0.0.0.0"
+  port: 2026
+  max_connections: 8
+  worker_threads: 4
+
+audio:
+  sample_rate: 16000
+  sample_width: 2
+
+vad:
+  enabled: true
+  model: "${MODELS_DIR}/vad/silero_vad.int8.onnx"
+  threshold: 0.5
+  min_silence_duration: 0.1
+  min_speech_duration: 0.25
+  max_speech_duration: 8.0
+
+asr:
+  type: "sense-voice"
+  num_threads: 2
+  use_itn: true
+  sense_voice:
+    model: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx"
+    tokens: "${MODELS_DIR}/sense-voice/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
+
+punctuation:
+  enabled: false
+
+# Enable speaker identification for testing
+speaker_identification:
+  enabled: true
+  model: "${MODELS_DIR}/speaker-recognition-models/nemo_en_titanet_small.onnx"
+  voice_print_db: "${HOME}/.zasr/voice-prints"
+  similarity_threshold: 0.75
+  auto_track_new_speakers: true
+
+processing:
+  vad_window_size_ms: 30
+  update_interval_ms: 200
+  max_batch_size: 2
+
+timeouts:
+  connection: 15
+  recognition: 30
+
+logging:
+  file: ""
+  level: "info"
+  data_dir: ""
+
+model_paths:
+  - "${HOME}/.cache/sherpa-onnx"

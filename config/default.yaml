@@ -79,6 +79,14 @@ punctuation:
   enabled: false
   model: "${MODELS_DIR}/punctuation/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx"
 
+# Speaker identification configuration
+speaker_identification:
+  enabled: false
+  model: "${MODELS_DIR}/speaker-recognition-models/nemo_en_titanet_small.onnx"
+  voice_print_db: "${HOME}/.zasr/voice-prints"
+  similarity_threshold: 0.75
+  auto_track_new_speakers: true
+
 # Processing configuration
 processing:
   vad_window_size_ms: 30  # VAD window size (milliseconds)
