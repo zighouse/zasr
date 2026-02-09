@@ -239,9 +239,17 @@ static int RecordFromMicrophone(VoicePrintManager& manager,
   std::string temp_file(temp_template);
 
   // Build arecord command
+  // Use "default" device for index 0, otherwise use plughw format
+  std::string device_str;
+  if (device_index == 0) {
+    device_str = "default";
+  } else {
+    device_str = "plughw:" + std::to_string(device_index) + ",0";
+  }
+
   std::ostringstream cmd;
   cmd << "arecord"
-      << " -D plughw:" << device_index
+      << " -D " << device_str
       << " -f S16_LE"
       << " -r 16000"
       << " -c 1"
@@ -250,7 +258,7 @@ static int RecordFromMicrophone(VoicePrintManager& manager,
       << " 2>&1";
 
   std::cout << "Recording audio from microphone..." << std::endl;
-  std::cout << "  Device: plughw:" << device_index << std::endl;
+  std::cout << "  Device: " << device_str << std::endl;
   std::cout << "  Duration: " << duration << " seconds" << std::endl;
   std::cout << "  Sample rate: 16000 Hz, 16-bit, mono" << std::endl;
   std::cout << "\nPlease speak now..." << std::endl;
