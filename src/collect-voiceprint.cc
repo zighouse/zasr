@@ -24,7 +24,7 @@
 
 using namespace zasr;
 
-// Function declaration for RecordFromMicrophone
+// Forward declaration
 static int RecordFromMicrophone(VoicePrintManager& manager,
                                  const std::string& name,
                                  int duration,
@@ -34,6 +34,16 @@ static int RecordFromMicrophone(VoicePrintManager& manager,
                                  const std::string& language,
                                  const std::string& notes,
                                  bool force);
+
+// Helper function to process audio with VAD and extract speech segments
+// Returns the path to processed WAV file, or empty string on failure
+static std::string ProcessAudioWithVAD(const std::string& input_file,
+                                        const std::string& vad_model);
+
+// Helper function to write WAV file
+static bool WriteWavFile(const std::string& filepath,
+                         const std::vector<float>& samples,
+                         int sample_rate);
 
 // 辅助函数：计算字符串的显示宽度（中文算2，英文算1）
 static int GetDisplayWidth(const std::string& str) {
@@ -217,6 +227,164 @@ int ExportSpeakerSamples(VoicePrintManager& manager,
   return 0;
 }
 
+// Write WAV file from float samples
+static bool WriteWavFile(const std::string& filepath,
+                         const std::vector<float>& samples,
+                         int sample_rate) {
+  if (samples.empty()) {
+    std::cerr << "Error: No samples to write" << std::endl;
+    return false;
+  }
+
+  FILE* fp = fopen(filepath.c_str(), "wb");
+  if (!fp) {
+    std::cerr << "Error: Failed to open file for writing: " << filepath << std::endl;
+    return false;
+  }
+
+  // Convert float samples to int16
+  std::vector<int16_t> int16_samples(samples.size());
+  for (size_t i = 0; i < samples.size(); ++i) {
+    float val = samples[i];
+    if (val > 1.0f) val = 1.0f;
+    if (val < -1.0f) val = -1.0f;
+    int16_samples[i] = static_cast<int16_t>(val * 32767.0f);
+  }
+
+  // Write WAV header
+  uint32_t sample_count = static_cast<uint32_t>(int16_samples.size());
+  uint32_t byte_rate = sample_rate * 2;  // 16-bit mono
+  uint32_t data_size = sample_count * 2;
+  uint32_t file_size = 36 + data_size;
+
+  fwrite("RIFF", 1, 4, fp);
+  fwrite(&file_size, 4, 1, fp);
+  fwrite("WAVE", 1, 4, fp);
+  fwrite("fmt ", 1, 4, fp);
+
+  uint32_t fmt_chunk_size = 16;
+  uint16_t audio_format = 1;  // PCM
+  uint16_t num_channels = 1;
+  uint16_t bits_per_sample = 16;
+  fwrite(&fmt_chunk_size, 4, 1, fp);
+  fwrite(&audio_format, 2, 1, fp);
+  fwrite(&num_channels, 2, 1, fp);
+  fwrite(&sample_rate, 4, 1, fp);
+  fwrite(&byte_rate, 4, 1, fp);
+  fwrite(&num_channels, 2, 1, fp);  // block align
+  fwrite(&bits_per_sample, 2, 1, fp);
+
+  fwrite("data", 1, 4, fp);
+  fwrite(&data_size, 4, 1, fp);
+  fwrite(int16_samples.data(), 2, sample_count, fp);
+
+  fclose(fp);
+  return true;
+}
+
+// Process audio with VAD to extract speech segments
+static std::string ProcessAudioWithVAD(const std::string& input_file,
+                                        const std::string& vad_model) {
+  // Read WAV file using sherpa-onnx
+  const SherpaOnnxWave* wave = SherpaOnnxReadWave(input_file.c_str());
+  if (!wave) {
+    std::cerr << "Error: Failed to read WAV file: " << input_file << std::endl;
+    return "";
+  }
+
+  std::cout << "Processing audio with VAD..." << std::endl;
+  std::cout << "  Original duration: "
+            << (static_cast<float>(wave->num_samples) / wave->sample_rate)
+            << " seconds" << std::endl;
+
+  // Configure VAD
+  SherpaOnnxVadModelConfig vad_config;
+  std::memset(&vad_config, 0, sizeof(vad_config));
+  vad_config.silero_vad.model = vad_model.c_str();
+  vad_config.silero_vad.threshold = 0.5f;
+  vad_config.silero_vad.min_silence_duration = 0.1f;
+  vad_config.silero_vad.min_speech_duration = 0.25f;
+  vad_config.silero_vad.max_speech_duration = 30.0f;
+  vad_config.sample_rate = wave->sample_rate;
+
+  // Create VAD instance
+  const SherpaOnnxVoiceActivityDetector* vad =
+      SherpaOnnxCreateVoiceActivityDetector(&vad_config, 30.0f);
+
+  if (!vad) {
+    std::cerr << "Error: Failed to create VAD instance" << std::endl;
+    std::cerr << "Please ensure VAD model exists: " << vad_model << std::endl;
+    SherpaOnnxFreeWave(wave);
+    return "";
+  }
+
+  // Feed audio to VAD
+  SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, wave->samples, wave->num_samples);
+  SherpaOnnxVoiceActivityDetectorFlush(vad);
+
+  // Collect all speech segments
+  std::vector<float> speech_samples;
+  int segment_count = 0;
+
+  while (!SherpaOnnxVoiceActivityDetectorEmpty(vad)) {
+    const SherpaOnnxSpeechSegment* segment =
+        SherpaOnnxVoiceActivityDetectorFront(vad);
+
+    if (segment && segment->n > 0) {
+      segment_count++;
+      float start_time = static_cast<float>(segment->start) / wave->sample_rate;
+      float end_time = static_cast<float>(segment->start + segment->n) / wave->sample_rate;
+
+      std::cout << "  Speech segment " << segment_count << ": "
+                << start_time << "s - " << end_time << "s ("
+                << segment->n << " samples)" << std::endl;
+
+      // Append segment samples
+      speech_samples.insert(speech_samples.end(),
+                           segment->samples,
+                           segment->samples + segment->n);
+    }
+
+    SherpaOnnxDestroySpeechSegment(segment);
+    SherpaOnnxVoiceActivityDetectorPop(vad);
+  }
+
+  // Clean up
+  SherpaOnnxDestroyVoiceActivityDetector(vad);
+  SherpaOnnxFreeWave(wave);
+
+  if (speech_samples.empty()) {
+    std::cerr << "Error: No speech detected in recording" << std::endl;
+    std::cerr << "Please speak louder or closer to the microphone" << std::endl;
+    return "";
+  }
+
+  std::cout << "  Extracted " << segment_count << " speech segment(s), "
+            << (static_cast<float>(speech_samples.size()) / wave->sample_rate)
+            << " seconds total" << std::endl;
+
+  // Create output file
+  char temp_template[] = "/tmp/zasr-vad-processed-XXXXXX.wav";
+  int temp_fd = mkstemps(temp_template, 4);
+  if (temp_fd == -1) {
+    std::cerr << "Error: Failed to create temporary file" << std::endl;
+    return "";
+  }
+  close(temp_fd);
+
+  std::string output_file(temp_template);
+
+  // Write processed WAV
+  if (!WriteWavFile(output_file, speech_samples, wave->sample_rate)) {
+    std::cerr << "Error: Failed to write processed WAV file" << std::endl;
+    return "";
+  }
+
+  std::cout << "  Saved processed audio to: " << output_file << std::endl;
+
+  return output_file;
+}
+
 // Record audio from microphone and add to voice print database
 static int RecordFromMicrophone(VoicePrintManager& manager,
                                  const std::string& name,
@@ -295,15 +463,58 @@ static int RecordFromMicrophone(VoicePrintManager& manager,
     }
   }
 
-  // Add to voice print database
-  std::cout << "\nExtracting voice print and adding to database..." << std::endl;
+  // Process audio with VAD to extract speech segments
+  std::string vad_model = GetDefaultModelPath("vad/");
+  vad_model += "silero_vad.int8.onnx";
 
-  std::vector<std::string> audio_files = {temp_file};
+  struct stat buffer;
+  if (stat(vad_model.c_str(), &buffer) != 0) {
+    std::cerr << "Warning: VAD model not found: " << vad_model << std::endl;
+    std::cerr << "Will use raw recording without VAD processing" << std::endl;
+    std::cerr << "To enable VAD, download the model from:" << std::endl;
+    std::cerr << "  https://github.com/k2-fsa/sherpa-onnx/releases" << std::endl;
+
+    // Use raw recording
+    std::cout << "\nExtracting voice print and adding to database..." << std::endl;
+    std::vector<std::string> audio_files = {temp_file};
+    std::string speaker_id = manager.AddSpeaker(name, audio_files,
+                                                gender, language, notes, force);
+
+    // Clean up temp file
+    std::filesystem::remove(temp_file);
+
+    if (speaker_id.empty()) {
+      std::cerr << "\nError: Failed to add speaker to database" << std::endl;
+      return 1;
+    }
+
+    std::cout << "\nSUCCESS: Speaker added to database" << std::endl;
+    std::cout << "  Speaker ID: " << speaker_id << std::endl;
+    std::cout << "  Name: " << name << std::endl;
+    std::cout << "  Samples: 1 file (recorded from microphone)" << std::endl;
+    return 0;
+  }
+
+  // Process with VAD
+  std::string processed_file = ProcessAudioWithVAD(temp_file, vad_model);
+
+  // Clean up raw recording
+  std::filesystem::remove(temp_file);
+
+  if (processed_file.empty()) {
+    std::cerr << "\nError: VAD processing failed" << std::endl;
+    return 1;
+  }
+
+  // Add to voice print database using VAD-processed audio
+  std::cout << "\nExtracting voice print from processed audio..." << std::endl;
+
+  std::vector<std::string> audio_files = {processed_file};
   std::string speaker_id = manager.AddSpeaker(name, audio_files,
                                               gender, language, notes, force);
 
-  // Clean up temp file
-  std::filesystem::remove(temp_file);
+  // Clean up processed file
+  std::filesystem::remove(processed_file);
 
   if (speaker_id.empty()) {
     std::cerr << "\nError: Failed to add speaker to database" << std::endl;
@@ -317,7 +528,7 @@ static int RecordFromMicrophone(VoicePrintManager& manager,
   std::cout << "\nSUCCESS: Speaker added to database" << std::endl;
   std::cout << "  Speaker ID: " << speaker_id << std::endl;
   std::cout << "  Name: " << name << std::endl;
-  std::cout << "  Samples: 1 file (recorded from microphone)" << std::endl;
+  std::cout << "  Samples: 1 file (VAD-processed recording)" << std::endl;
 
   return 0;
 }
