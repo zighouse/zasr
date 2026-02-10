@@ -84,7 +84,7 @@ speaker_identification:
   enabled: true
   model: "${MODELS_DIR}/speaker-recognition-models/nemo_en_titanet_small.onnx"
   voice_print_db: "${HOME}/.zasr/voice-prints"
-  similarity_threshold: 0.75
+  similarity_threshold: 0.3
   auto_track_new_speakers: true
 
 # Processing configuration

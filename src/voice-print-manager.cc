@@ -48,7 +48,7 @@ class VoicePrintManager::Impl {
     sid_config.debug = config_.debug;
     sid_config.provider = config_.provider;
     sid_config.voice_print_db = db_.GetDatabasePath();
-    sid_config.similarity_threshold = 0.75f;
+    sid_config.similarity_threshold = 0.3f;
     sid_config.enable_auto_track = true;
 
     identifier_ = std::make_unique<ZSpeakerIdentifier>(sid_config);

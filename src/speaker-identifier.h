@@ -103,7 +103,7 @@ class ZSpeakerIdentifier {
     bool debug = false;
     std::string provider = "cpu";
     std::string voice_print_db;    // 声纹数据库路径
-    float similarity_threshold = 0.75f;   // 相似度阈值
+    float similarity_threshold = 0.3f;    // 相似度阈值 (余弦相似度)
     bool enable_auto_track = true;        // 是否自动跟踪新说话人
   };
 
