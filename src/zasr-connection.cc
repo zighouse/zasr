@@ -472,6 +472,7 @@ void ZAsrConnection::StopProcessing() {
     std::lock_guard<std::recursive_mutex> lock(buffer_mutex_);
     audio_buffer_.clear();
     float_buffer_.clear();
+    current_sentence_audio_.clear();
   }
 
   vad_.reset();
@@ -734,6 +735,10 @@ void ZAsrConnection::ProcessOnlineMode() {
   std::vector<float> float_samples = Int16ToFloat(audio_buffer_);
 
   if (!float_samples.empty()) {
+    // 累积当前句子的音频数据用于说话人识别
+    current_sentence_audio_.insert(current_sentence_audio_.end(),
+                                   audio_buffer_.begin(),
+                                   audio_buffer_.end());
     LOG_DEBUG() << "ProcessOnlineMode: Feeding " << float_samples.size() << " samples";
     online_stream_->AcceptWaveform(16000, float_samples.data(), float_samples.size());
 
@@ -768,6 +773,36 @@ void ZAsrConnection::ProcessOnlineMode() {
 
       LOG_DEBUG() << "ProcessOnlineMode: Final result: " << current_sentence_.result;
 
+      // Perform speaker identification if enabled (using accumulated sentence audio)
+      if (enable_speaker_identification_ && speaker_identifier_ && !current_sentence_audio_.empty()) {
+        LOG_DEBUG() << "ProcessOnlineMode: Performing speaker identification with "
+                  << current_sentence_audio_.size() << " samples";
+
+        // Convert accumulated audio to float for speaker identification
+        std::vector<float> audio_segment = Int16ToFloat(current_sentence_audio_);
+
+        // Identify speaker
+        auto identification_result = speaker_identifier_->ProcessSegment(audio_segment);
+
+        if (!identification_result.speaker_id.empty()) {
+          current_speaker_id_ = identification_result.speaker_id;
+          current_speaker_name_ = identification_result.speaker_name;
+
+          LOG_INFO() << "ProcessOnlineMode: Identified speaker: "
+                    << current_speaker_id_ << " (" << current_speaker_name_ << ")"
+                    << " with confidence: " << identification_result.confidence;
+
+          if (identification_result.is_new_speaker) {
+            LOG_INFO() << "ProcessOnlineMode: New speaker tracked automatically";
+          }
+        } else {
+          // No speaker identified, clear previous speaker info
+          current_speaker_id_.clear();
+          current_speaker_name_.clear();
+          LOG_DEBUG() << "ProcessOnlineMode: No speaker identified";
+        }
+      }
+
       SendSentenceEnd(current_sentence_.index,
                      total_ms_,
                      current_sentence_.begin_time,
@@ -775,6 +810,9 @@ void ZAsrConnection::ProcessOnlineMode() {
 
       // 重置识别器流，开始新的句子
       online_recognizer_->Reset(online_stream_.get());
+
+      // 清空累积的句子音频
+      current_sentence_audio_.clear();
 
       sentence_counter_++;
       current_sentence_.index = sentence_counter_;
@@ -923,6 +961,7 @@ void ZAsrConnection::Close() {
     std::lock_guard<std::recursive_mutex> lock(buffer_mutex_);
     audio_buffer_.clear();
     float_buffer_.clear();
+    current_sentence_audio_.clear();
     vad_offset_ = 0;
   }
 

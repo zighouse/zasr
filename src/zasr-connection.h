@@ -235,6 +235,7 @@ class ZAsrConnection : public std::enable_shared_from_this<ZAsrConnection> {
   bool enable_speaker_identification_ = false;
   std::string current_speaker_id_;
   std::string current_speaker_name_;
+  std::vector<int16_t> current_sentence_audio_;  // 累积当前句子的音频（用于online模式的说话人识别）
 
   // 句子状态管理
   SentenceState current_sentence_;
